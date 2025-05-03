@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -16,6 +17,10 @@ import asyncio
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import json
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -47,16 +52,18 @@ async def root():
 
 @app.post("/bank/link/initiate")
 async def initiate_bank_link(user_id: str, institution_id: str, redirect_url: str):
+    logger.debug(f"Received request to /bank/link/initiate with params: user_id={user_id}, institution_id={institution_id}, redirect_url={redirect_url}")
     try:
-        consent_link = await initiate_requisition(user_id, institution_id, redirect_url)
-        return {"consent_link": consent_link}
+        result = initiate_requisition(user_id, institution_id, redirect_url)
+        return {"consent_link": result["link"]}
     except Exception as e:
+        logger.error(f"Error in initiate_bank_link: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/bank/link/callback")
-async def handle_bank_link_callback(requisition_id: str):
+@app.get("/bank/link/callback")
+async def handle_bank_link_callback(ref: str):
     try:
-        await handle_requisition_callback(requisition_id)
+        handle_requisition_callback(ref)
         return {"status": "success", "message": "Bank account linked successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -111,6 +118,18 @@ async def get_statistics(user_id: str, months: int = 12):
                 monthly_spending[month_key] += amount
 
                 # Update category spending
+                if category not in category_spending:
+                    category_spending[category] = 0
+                category_spending[category] += amount
+
+                # Update top merchants
+                if merchant not in top_merchants:
+                    top_merchants[merchant] = 0
+                top_merchants[merchant] += amount
+
+                # Update totals
+                if amount < 0:
+                    total_spending += abs(amount)
                 if category not in category_spending:
                     category_spending[category] = 0
                 category_spending[category] += amount
