@@ -63,6 +63,14 @@ const Header = () => {
                   {user?.name || "Profile"}
                 </Button>
               </Link>
+              <Link to="/dashboard">
+                <Button
+                  variant="outline"
+                  className="border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
+                >
+                  Dashboard
+                </Button>
+              </Link>
               <LogoutButton className="bg-referlut-orange hover:bg-referlut-orange/90 text-white" />
             </>
           ) : (
