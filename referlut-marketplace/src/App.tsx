@@ -39,8 +39,9 @@ function App() {
   };
 
   const handleMessageOwner = () => {
-    // Implement messaging functionality
-    console.log("Message owner clicked");
+    // This will be called after sending a message
+    console.log("Message sent to owner");
+    // In a real app, you might want to show a notification or update the UI
   };
 
   return (

@@ -1,5 +1,12 @@
-import React from "react";
-import { X, MessageCircle, User, ExternalLink, CreditCard } from "lucide-react";
+import React, { useState } from "react";
+import {
+  X,
+  MessageCircle,
+  User,
+  ExternalLink,
+  CreditCard,
+  Send,
+} from "lucide-react";
 import { Offer } from "../types";
 
 interface OfferDetailsModalProps {
@@ -15,9 +22,22 @@ const OfferDetailsModal: React.FC<OfferDetailsModalProps> = ({
   onClose,
   onMessageOwner,
 }) => {
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [messageText, setMessageText] = useState("");
+
   if (!isOpen) return null;
 
   const isLoyalty = offer.type === "loyalty";
+
+  const handleSendMessage = () => {
+    if (messageText.trim() === "") return;
+
+    // In a real app, this would send the message to an API
+    console.log("Sending message to owner:", messageText);
+    setMessageText("");
+    setIsMessageModalOpen(false);
+    onMessageOwner();
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
@@ -147,7 +167,7 @@ const OfferDetailsModal: React.FC<OfferDetailsModalProps> = ({
           <div className="flex space-x-3">
             {!isLoyalty && (
               <button
-                onClick={onMessageOwner}
+                onClick={() => setIsMessageModalOpen(true)}
                 className="flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
               >
                 <MessageCircle className="w-5 h-5 mr-2" />
@@ -169,6 +189,54 @@ const OfferDetailsModal: React.FC<OfferDetailsModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Message Composition Modal */}
+      {isMessageModalOpen && (
+        <div
+          className="fixed inset-0 z-60 bg-black bg-opacity-50 flex items-center justify-center p-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md transform transition-all animate-fade-in">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="font-medium">
+                Message to {offer.brand} Referral Owner
+              </h3>
+              <button
+                onClick={() => setIsMessageModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <textarea
+                className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder={`Hi there! I'm interested in your ${offer.brand} ${offer.type} offer...`}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+              ></textarea>
+
+              <div className="mt-4 flex justify-end space-x-3">
+                <button
+                  onClick={() => setIsMessageModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendMessage}
+                  className={`px-4 py-2 rounded-md flex items-center ${messageText.trim() ? "bg-blue-500 text-white hover:bg-blue-600" : "bg-blue-300 text-white cursor-not-allowed"}`}
+                  disabled={!messageText.trim()}
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  Send Message
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
