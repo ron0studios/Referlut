@@ -1,13 +1,14 @@
+// In AuthGuard.tsx
 import { useAuth0 } from "@auth0/auth0-react";
 import { Navigate, useLocation } from "react-router-dom";
 
-interface AuthGuardProps {
-  children: React.ReactNode;
-}
-
-const AuthGuard = ({ children }: AuthGuardProps) => {
+const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, isLoading } = useAuth0();
   const location = useLocation();
+
+  // Add console logs to debug
+  console.log("AuthGuard - isAuthenticated:", isAuthenticated);
+  console.log("AuthGuard - isLoading:", isLoading);
 
   if (isLoading) {
     return (
@@ -18,7 +19,7 @@ const AuthGuard = ({ children }: AuthGuardProps) => {
   }
 
   if (!isAuthenticated) {
-    // Redirect to login page but save the intended destination
+    // Make sure this redirect is working correctly
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

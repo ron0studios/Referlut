@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useState } from "react";
+import { X } from "lucide-react";
 
 interface CreateOfferModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activeTab: 'referral' | 'loyalty' | 'charity';
+  activeTab: "referral" | "loyalty" | "charity";
 }
 
 const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
@@ -13,15 +13,15 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
   activeTab,
 }) => {
   const [formData, setFormData] = useState({
-    brand: '',
-    title: '',
-    description: '',
+    brand: "",
+    title: "",
+    description: "",
     total: 1,
     price: 0,
   });
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
@@ -43,14 +43,14 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
 
   const getTitle = () => {
     switch (activeTab) {
-      case 'referral':
-        return 'Create New Referral';
-      case 'loyalty':
-        return 'Create New Loyalty Card Share';
-      case 'charity':
-        return 'Create New Charity Pool';
+      case "referral":
+        return "Create New Referral";
+      case "loyalty":
+        return "Create New Loyalty Card Share";
+      case "charity":
+        return "Create New Charity Pool";
       default:
-        return 'Create New Offer';
+        return "Create New Offer";
     }
   };
 
@@ -86,7 +86,7 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 required
               />
             </div>
-            
+
             <div>
               <label
                 htmlFor="title"
@@ -104,7 +104,7 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 required
               />
             </div>
-            
+
             <div>
               <label
                 htmlFor="description"
@@ -122,7 +122,7 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 required
               />
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label
@@ -142,7 +142,7 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                   required
                 />
               </div>
-              
+
               <div>
                 <label
                   htmlFor="price"
@@ -164,7 +164,7 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
               </div>
             </div>
           </div>
-          
+
           <div className="mt-6 flex justify-end space-x-3">
             <button
               type="button"

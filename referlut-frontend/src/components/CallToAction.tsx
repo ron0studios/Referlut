@@ -23,14 +23,24 @@ const CallToAction = () => {
                 minute to get started.
               </p>
               {isAuthenticated ? (
-                <Link to="/profile">
-                  <Button
-                    size="lg"
-                    className="bg-white text-referlut-purple hover:bg-white/90"
-                  >
-                    View Your Profile
-                  </Button>
-                </Link>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Link to="/profile">
+                    <Button
+                      size="lg"
+                      className="bg-white text-referlut-purple hover:bg-white/90"
+                    >
+                      View Your Profile
+                    </Button>
+                  </Link>
+                  <Link to="/dashboard">
+                    <Button
+                      size="lg"
+                      className="bg-referlut-orange text-white hover:bg-referlut-orange/90"
+                    >
+                      Go to Dashboard
+                    </Button>
+                  </Link>
+                </div>
               ) : (
                 <div className="flex flex-col sm:flex-row gap-4">
                   <SignupButton
