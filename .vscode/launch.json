@@ -20,16 +20,25 @@
             "envFile": "${workspaceFolder}/referlut-api/.env"
         },
         {
-            "name": "Python: Current File",
+            "name": "Worker",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "${workspaceFolder}/referlut-api/worker.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/referlut-api"
             },
             "envFile": "${workspaceFolder}/referlut-api/.env"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Worker + main app",
+            "configurations": [
+                "FastAPI",
+                "Worker"
+            ]
         }
     ]
 } 
