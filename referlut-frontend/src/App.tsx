@@ -10,6 +10,7 @@ import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
 import Profile from "./pages/Profile";
 import Dashboard from "./pages/dashboard/Dashboard";
+import Marketplace from "./pages/Marketplace"; // Import the new Marketplace page
 import AuthGuard from "./components/auth/AuthGuard";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,14 @@ const App = () => (
               element={
                 <AuthGuard>
                   <Dashboard />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/marketplace"
+              element={
+                <AuthGuard>
+                  <Marketplace />
                 </AuthGuard>
               }
             />

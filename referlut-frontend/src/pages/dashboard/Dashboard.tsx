@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { FinancialChart } from "@/components/dashboard/FinancialChart";
 import { ExpertTips } from "@/components/dashboard/ExpertTips";
 import { MessagesPreview } from "@/components/dashboard/MessagesPreview";
+import { Link } from "react-router-dom";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,6 +66,9 @@ const Index = () => {
         <div className="mt-8">
           <MessagesPreview />
         </div>
+        <Link to="/marketplace">
+          <Button variant="outline">Go to Marketplace</Button>
+        </Link>
       </div>
     </div>
   );

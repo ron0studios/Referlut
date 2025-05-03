@@ -63,6 +63,12 @@ const Header = () => {
                   {user?.name || "Profile"}
                 </Button>
               </Link>
+              <Link
+                to="/marketplace"
+                className="text-gray-700 hover:text-referlut-purple transition"
+              >
+                Marketplace
+              </Link>
               <Link to="/dashboard">
                 <Button
                   variant="outline"
