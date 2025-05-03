@@ -18,7 +18,7 @@
       }
     },
     {
-      "name": "Worker",python
+      "name": "Worker",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/referlut-api/worker.py",

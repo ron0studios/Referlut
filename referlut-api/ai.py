@@ -6,7 +6,7 @@ async def get_spending_insights(prompt: str):
         model="o4-mini",
         input=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message["content"]
+    return response.content
 
 async def scrape_best_deals(query: str):
     # Construct a detailed prompt for scraping deals
@@ -31,4 +31,4 @@ async def scrape_best_deals(query: str):
         model="o4-mini",
         input=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message["content"] 
+    return response.content

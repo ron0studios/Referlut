@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import datetime
 from supabase import create_client, Client
 import openai
+from typing import Optional
 from banking import (
     initiate_requisition,
     handle_requisition_callback,
@@ -23,6 +24,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
 
@@ -35,10 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 class InsightsRequest():
     prompt: str
-    deal_query: str = None
+    deal_query: Optional[str] = None
 
 @app.get("/")
 async def root():
@@ -62,7 +65,9 @@ async def handle_bank_link_callback(ref: str):
         if result.get("status") != "success":
             raise HTTPException(status_code=400, detail=result.get("message"))
         requisition = result["requisition"]
-        req_id = requisition.get("id")
+        if not requisition:
+            raise HTTPException(status_code=400, detail="Requisition not found")
+        req_id = requisition.get("id") # type: ignore
         user_id = ref
         # fetch and enqueue all accounts (metadata + transaction jobs)
         accounts = fetch_accounts(req_id, user_id)
@@ -162,7 +167,7 @@ async def get_statistics(user_id: str, months: int = 12):
             "savings_opportunities": savings_opportunities,
             "last_updated": datetime.utcnow().isoformat()
         }
-        
+
         # Upsert statistics
         supabase.table("user_statistics").upsert(stats_data).execute()
 
@@ -182,23 +187,23 @@ async def get_ai_insights(user_id: str):
     try:
         # Get user's statistics
         stats = get_statistics(user_id)
-        
+
         # Construct a detailed prompt for AI analysis
         prompt = f"""
         Analyze the following spending data and provide personalized insights and recommendations:
-        
+
         Total Spending: £{stats['total_spending']:.2f}
         Total Income: £{stats['total_income']:.2f}
-        
+
         Spending by Category:
         {json.dumps(stats['category_spending'], indent=2)}
-        
+
         Monthly Spending Trend:
         {json.dumps(stats['monthly_spending'], indent=2)}
-        
+
         Top Spending Areas:
         {json.dumps(stats['top_merchants'], indent=2)}
-        
+
         Please provide:
         1. A summary of spending patterns
         2. Areas where spending could be optimized
@@ -206,7 +211,7 @@ async def get_ai_insights(user_id: str):
         4. Comparison with average spending in these categories
         5. Actionable steps to improve financial health
         """
-        
+
         insights = get_spending_insights(prompt)
         return {"insights": insights}
     except Exception as e:
