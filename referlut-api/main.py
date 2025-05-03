@@ -63,24 +63,39 @@ async def initiate_bank_link(user_id: str, institution_id: str, redirect_url: st
 @app.get("/bank/link/callback")
 async def handle_bank_link_callback(ref: str):
     try:
-        handle_requisition_callback(ref)
-        return {"status": "success", "message": "Bank account linked successfully"}
+        # finalize requisition and enqueue metadata and transactions
+        result = handle_requisition_callback(ref)
+        if result.get("status") != "success":
+            raise HTTPException(status_code=400, detail=result.get("message"))
+        requisition = result["requisition"]
+        req_id = requisition.get("id")
+        user_id = requisition.get("reference_id")
+        # fetch and enqueue all accounts (metadata + transaction jobs)
+        accounts = fetch_accounts(req_id, user_id)
+        return {"status": "success", "accounts": accounts}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/accounts")
 async def get_accounts(user_id: str):
     try:
-        accounts = fetch_accounts(user_id)
+        # fetch all linked requisitions for user
+        resp = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
+        accounts = []
+        for r in resp.data:
+            accounts.extend(fetch_accounts(r["requisition_id"], user_id))
         return accounts
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/transactions")
 async def get_transactions(account_id: str, months: int = 12):
+    # return persisted transactions from Supabase
     try:
-        transactions = fetch_transactions(account_id, months)
-        return transactions
+        response = supabase.table("transactions").select("*").eq("account_id", account_id).execute()
+        return response.data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
