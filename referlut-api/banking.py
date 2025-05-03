@@ -142,34 +142,79 @@ def fetch_accounts(requisition_id: str, user_id: str):
     account_ids = requisition.get("accounts", [])
     records = []
     for account_id in account_ids:
-        # account metadata
+
+
+        # copilot shush
+        # 
+        # we need to:
+        # 1. For each account_id, check if the account is already in the database
+        # If it is in the database, return its existing record
+        # If it is not in the database:
+        # 2. Check if we can fetch it, if we can, then we will fetch the metadata and details.
+        # 3. Once metadata and details are fetched, populate the accounts table.
+        # 4. Then: log fetches,
+        # 5. Append the account to the queue for transactions to be processed
+
+        # Safely check existing account without erroring if no rows
+        existing = supabase.table('accounts').select('*').eq('account_id', account_id).limit(1).execute()
+        if existing.data:
+            records.append(existing.data[0])
+            continue
+        # Account not found locally; initialize empty info
+        fetched_account = False
+        fetched_details = False
+        # Account does not exist, fetch from Nordigen or Supabase
+        acct = {}
+        metadata = {}
+        details = {}
+
         if can_fetch(account_id, 'account'):
             acct = client.account_api(id=account_id)
-            info = acct.get_account()
-            log_fetch(account_id, 'account')
+            metadata = acct.get_metadata()
+            fetched_account = True
         else:
-            # fetch last stored metadata
-            info = supabase.table('accounts').select('*').eq('account_id', account_id).single().execute().data or {}
+            # If we cannot fetch, then we will have to log an error that we cannot fetch the account and continue
+            print(f"Cannot fetch account {account_id} due to rate limit")
+            continue
 
         if can_fetch(account_id, 'details'):
             details = acct.get_details()
-            log_fetch(account_id, 'details')
+            fetched_details = True
         else:
-            details = {'account': {'currency': info.get('currency')}}
+            print(f"Cannot fetch account details for {account_id} due to rate limit")
+            continue
 
+
+        # pull metadata because these fields need irt
+        ''''
+                        "iban": acct_metadata.get("iban", ""),
+                "institution_id": req["institution_id"],
+                "status": acct_metadata.get("status", ""),
+                "owner_name": acct_metadata.get("owner_name", ""),
+                "bban": acct_metadata.get("bban", ""),
+                "name": acct_metadata.get("name", ""),
+                "currency": acct_details.get("currency", ""),'''
+
+        # Upsert account metadata before logging fetches to satisfy FK constraints
         rec = {
-            "account_id": info.get("id"),
-            "iban": info.get("iban"),
-            "institution_id": info.get("institution_id"),
-            "status": info.get("status"),
-            "owner_name": info.get("owner_name"),
-            "bban": info.get("bban"),
-            "name": info.get("name"),
+            "account_id": account_id,
+            "iban": metadata["iban"],
+            "institution_id": requisition["institution_id"],
+            "status": metadata["status"],
+            "owner_name": metadata["owner_name"],
+            "bban": metadata["bban"],
+            "name": metadata["name"],
             "currency": details.get("account", {}).get("currency"),
             "user_id": user_id
         }
-        # Upsert account metadata
         supabase.table("accounts").upsert(rec, on_conflict=["account_id"]).execute()
+
+        # Log fetches after the account record exists
+        if fetched_account:
+            log_fetch(account_id, 'account')
+        if fetched_details:
+            log_fetch(account_id, 'details')
+
         # Enqueue for transaction fetching
         supabase.table("account_queue").upsert({
             "account_id": account_id,
