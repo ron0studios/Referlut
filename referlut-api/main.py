@@ -102,44 +102,27 @@ async def get_statistics(user_id: str, months: int = 12):
 
         # Process each account
         for account in accounts:
-            account_id = account.get("id")
+            account_id = account["account_id"]
             transactions = fetch_transactions(account_id, months)
-            
-            for transaction in transactions:
-                amount = float(transaction.get("transactionAmount", {}).get("amount", 0))
-                date = datetime.fromisoformat(transaction.get("bookingDate", "").replace("Z", "+00:00"))
+            for tx in transactions:
+                # Use snake_case fields from upserted records
+                amount = tx.get("amount", 0)
+                # Parse booking_date
+                date = datetime.fromisoformat(tx.get("booking_date", "").replace("Z", "+00:00"))
                 month_key = date.strftime("%Y-%m")
-                merchant = transaction.get("debtorName") or transaction.get("creditorName", "Unknown")
-                category = transaction.get("category", "Uncategorized")
-                
-                # Update monthly spending
-                if month_key not in monthly_spending:
-                    monthly_spending[month_key] = 0
-                monthly_spending[month_key] += amount
+                merchant = tx.get("merchant_name", "Unknown")
+                category = tx.get("category", "Uncategorized")
 
-                # Update category spending
-                if category not in category_spending:
-                    category_spending[category] = 0
-                category_spending[category] += amount
+                # Update monthly spending trend
+                monthly_spending[month_key] = monthly_spending.get(month_key, 0) + amount
 
-                # Update top merchants
-                if merchant not in top_merchants:
-                    top_merchants[merchant] = 0
-                top_merchants[merchant] += amount
+                # Update category spending totals
+                category_spending[category] = category_spending.get(category, 0) + amount
 
-                # Update totals
-                if amount < 0:
-                    total_spending += abs(amount)
-                if category not in category_spending:
-                    category_spending[category] = 0
-                category_spending[category] += amount
+                # Tally spending per merchant
+                top_merchants[merchant] = top_merchants.get(merchant, 0) + amount
 
-                # Update top merchants
-                if merchant not in top_merchants:
-                    top_merchants[merchant] = 0
-                top_merchants[merchant] += amount
-
-                # Update totals
+                # Update overall income vs spending
                 if amount < 0:
                     total_spending += abs(amount)
                 else:
@@ -218,4 +201,4 @@ async def get_ai_insights(user_id: str):
         insights = get_spending_insights(prompt)
         return {"insights": insights}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))

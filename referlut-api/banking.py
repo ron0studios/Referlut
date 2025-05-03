@@ -118,17 +118,32 @@ def handle_requisition_callback(ref: str):
 
 def fetch_accounts(user_id: str):
     """
-    Fetch basic account details for each linked account via API, upsert into Supabase, and return list.
+    Returns all user accounts from Supabase and appends any newly linked accounts from the API.
     """
+    # First, get all existing accounts from Supabase
+    existing_accounts_response = supabase.table("accounts").select("*").eq("user_id", user_id).execute()
+    accounts = existing_accounts_response.data
+    
+    # Keep track of existing account IDs to avoid duplicates
+    existing_account_ids = {account["account_id"] for account in accounts}
+    
+    # Now check for any new accounts via the API
     # Retrieve all requisitions for user
     response = supabase.table("requisitions").select("*").eq("user_id", user_id).execute()
-    accounts = []
+    
     for req in response.data:
         requisition = client.requisition.get_requisition_by_id(req["requisition_id"])
         for account_id in requisition.get("accounts", []):
+            # Get account details from API
             acct = client.account_api(id=account_id)
+            
+            # Skip if we already have this account
+            if acct["id"] in existing_account_ids:
+                continue
+                
             acct_info = acct.get_details()
-            # GET /accounts/{id}/
+            
+            # Use the same record structure as the original code
             record = {
                 "account_id": acct["id"],
                 "iban": acct["iban"],
@@ -140,9 +155,11 @@ def fetch_accounts(user_id: str):
                 "currency": acct_info["currency"],
                 "user_id": user_id
             }
+            
             # Upsert into Supabase accounts table
             supabase.table("accounts").upsert(record, on_conflict=["account_id"]).execute()
             accounts.append(record)
+            
     return accounts
 
 def fetch_balances(account_id: str):
@@ -161,6 +178,11 @@ def fetch_transactions(account_id: str, months: int = 12):
     """
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30 * months)
+    
+    # First, get existing transactions from Supabase
+    existing_tx_response = supabase.table("transactions").select("transaction_id").execute()
+    existing_tx_ids = {tx["transaction_id"] for tx in existing_tx_response.data if tx["transaction_id"]}
+    
     acct = client.account_api(id=account_id)
     tx_resp = acct.get_transactions()
     raw_txs = []
@@ -182,6 +204,11 @@ def fetch_transactions(account_id: str, months: int = 12):
             dt = datetime.fromisoformat(date_str)
             if dt < start_date:
                 continue
+                
+        # Skip if transaction already exists in database
+        if t.get("transactionId") in existing_tx_ids:
+            continue
+            
         # determine category
         pcode = t.get("proprietaryBankTransactionCode")
         category = code_map.get(pcode, "other")
@@ -202,7 +229,7 @@ def fetch_transactions(account_id: str, months: int = 12):
             "proprietary_bank_transaction_code": pcode,
             "category": category
         }
-        # upsert into Supabase transactions table
-        supabase.table("transactions").upsert(record, on_conflict=["transaction_id"]).execute()
+        # Only insert new transactions
+        supabase.table("transactions").insert(record).execute()
         txs.append(record)
     return txs
