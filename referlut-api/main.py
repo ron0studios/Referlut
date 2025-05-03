@@ -71,7 +71,7 @@ async def handle_bank_link_callback(ref: str):
 @app.get("/accounts")
 async def get_accounts(user_id: str):
     try:
-        accounts = await fetch_accounts(user_id)
+        accounts = fetch_accounts(user_id)
         return accounts
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -79,7 +79,7 @@ async def get_accounts(user_id: str):
 @app.get("/transactions")
 async def get_transactions(account_id: str, months: int = 12):
     try:
-        transactions = await fetch_transactions(account_id, months)
+        transactions = fetch_transactions(account_id, months)
         return transactions
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -88,7 +88,7 @@ async def get_transactions(account_id: str, months: int = 12):
 async def get_statistics(user_id: str, months: int = 12):
     try:
         # Get all accounts for the user
-        accounts = await fetch_accounts(user_id)
+        accounts = fetch_accounts(user_id)
         if not accounts:
             raise HTTPException(status_code=404, detail="No accounts found for user")
 
@@ -103,7 +103,7 @@ async def get_statistics(user_id: str, months: int = 12):
         # Process each account
         for account in accounts:
             account_id = account.get("id")
-            transactions = await fetch_transactions(account_id, months)
+            transactions = fetch_transactions(account_id, months)
             
             for transaction in transactions:
                 amount = float(transaction.get("transactionAmount", {}).get("amount", 0))
@@ -151,7 +151,7 @@ async def get_statistics(user_id: str, months: int = 12):
         # Calculate savings opportunities
         for category, amount in category_spending.items():
             if amount > 100:  # Only suggest savings for categories with significant spending
-                deals = await scrape_best_deals(f"Find best deals and savings for {category}")
+                deals = scrape_best_deals(f"Find best deals and savings for {category}")
                 if deals:
                     savings_opportunities.append({
                         "category": category,
@@ -189,7 +189,7 @@ async def get_statistics(user_id: str, months: int = 12):
 async def get_ai_insights(user_id: str):
     try:
         # Get user's statistics
-        stats = await get_statistics(user_id)
+        stats = get_statistics(user_id)
         
         # Construct a detailed prompt for AI analysis
         prompt = f"""
@@ -215,7 +215,7 @@ async def get_ai_insights(user_id: str):
         5. Actionable steps to improve financial health
         """
         
-        insights = await get_spending_insights(prompt)
+        insights = get_spending_insights(prompt)
         return {"insights": insights}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) 

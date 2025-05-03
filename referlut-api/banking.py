@@ -117,36 +117,92 @@ def handle_requisition_callback(ref: str):
     return {"status": "error", "message": "Requisition not linked"}
 
 def fetch_accounts(user_id: str):
-    # Fetch accounts linked to the user from Supabase
+    """
+    Fetch basic account details for each linked account via API, upsert into Supabase, and return list.
+    """
+    # Retrieve all requisitions for user
     response = supabase.table("requisitions").select("*").eq("user_id", user_id).execute()
     accounts = []
     for req in response.data:
         requisition = client.requisition.get_requisition_by_id(req["requisition_id"])
         for account_id in requisition.get("accounts", []):
-            account = client.account.get_account_details(account_id)
-            accounts.append(account)
+            acct = client.account_api(id=account_id)
+            acct_info = acct.get_details()
+            # GET /accounts/{id}/
+            record = {
+                "account_id": acct["id"],
+                "iban": acct["iban"],
+                "institution_id": acct["institution_id"],
+                "status": acct["status"],
+                "owner_name": acct["owner_name"],
+                "bban": acct["bban"],
+                "name": acct["name"],
+                "currency": acct_info["currency"],
+                "user_id": user_id
+            }
+            # Upsert into Supabase accounts table
+            supabase.table("accounts").upsert(record, on_conflict=["account_id"]).execute()
+            accounts.append(record)
     return accounts
 
 def fetch_balances(account_id: str):
-    # Fetch balances for the given account
-    account = client.account_api(id=account_id)
-    if not account:
-        raise Exception("Account not found")
-
-    balances = account.get_balances(account_id)
-    return balances
+    """
+    Fetch balances for the given account via GET /accounts/{id}/balances/ and return list of balances.
+    """
+    acct = client.account_api(id=account_id)
+    balances_resp = acct.get_balances()
+    # extract balances array
+    return balances_resp.get("balances", [])
 
 def fetch_transactions(account_id: str, months: int = 12):
-    # Calculate date range for transactions
+    """
+    Fetch transactions via GET /accounts/{id}/transactions, flatten booked and pending,
+    filter by date within 'months', categorize by merchant codes, and return list.
+    """
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30 * months)
-    date_from = start_date.strftime("%Y-%m-%d")
-    date_to = end_date.strftime("%Y-%m-%d")
-
-    account = client.account_api(id=account_id)
-    if not account:
-        raise Exception("Account not found")
-
-    # Fetch transactions for the given account and date range
-    transactions = account.get_transactions(date_from=date_from, date_to=date_to)
-    return transactions 
+    acct = client.account_api(id=account_id)
+    tx_resp = acct.get_transactions()
+    raw_txs = []
+    raw_txs.extend(tx_resp.get("transactions", {}).get("booked", []))
+    raw_txs.extend(tx_resp.get("transactions", {}).get("pending", []))
+    # mapping proprietary codes to categories
+    code_map = {
+        "FPO": "debit",
+        "BGC": "credit",
+        "FPI": "credit",
+        "CSH": "cash",
+        "TFR": "transfer"
+    }
+    txs = []
+    for t in raw_txs:
+        # filter by date
+        date_str = t.get("bookingDate") or t.get("valueDate")
+        if date_str:
+            dt = datetime.fromisoformat(date_str)
+            if dt < start_date:
+                continue
+        # determine category
+        pcode = t.get("proprietaryBankTransactionCode")
+        category = code_map.get(pcode, "other")
+        # extract amount and currency
+        amt = t.get("transactionAmount", {})
+        amt_val = float(amt.get("amount", 0))
+        curr = amt.get("currency")
+        record = {
+            "transaction_id": t.get("transactionId"),
+            "entry_reference": t.get("entryReference"),
+            "internal_transaction_id": t.get("internalTransactionId"),
+            "additional_information": t.get("additionalInformation"),
+            "merchant_name": t.get("remittanceInformationUnstructured"),
+            "amount": amt_val,
+            "currency": curr,
+            "booking_date": t.get("bookingDate"),
+            "value_date": t.get("valueDate"),
+            "proprietary_bank_transaction_code": pcode,
+            "category": category
+        }
+        # upsert into Supabase transactions table
+        supabase.table("transactions").upsert(record, on_conflict=["transaction_id"]).execute()
+        txs.append(record)
+    return txs
