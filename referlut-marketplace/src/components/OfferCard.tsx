@@ -1,5 +1,5 @@
 import React from "react";
-import { Star, Bookmark } from "lucide-react";
+import { Star, Bookmark, CreditCard } from "lucide-react";
 import { Offer } from "../types";
 
 interface OfferCardProps {
@@ -13,9 +13,11 @@ const OfferCard: React.FC<OfferCardProps> = ({
   featured = false,
   onClick,
 }) => {
+  const isLoyalty = offer.type === "loyalty";
+
+  // The availability ratio is only meaningful for referral / charity
   const availabilityRatio = `${offer.used}/${offer.total}`;
   const availabilityPercentage = (offer.used / offer.total) * 100;
-
   const getAvailabilityColor = () => {
     if (availabilityPercentage < 50) return "bg-green-500";
     if (availabilityPercentage < 80) return "bg-yellow-500";
@@ -70,34 +72,51 @@ const OfferCard: React.FC<OfferCardProps> = ({
         <p className="text-gray-600 text-sm mb-4 flex-1">{offer.description}</p>
 
         <div className="mt-auto">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-sm font-medium text-gray-500">
-              Availability
-            </span>
-            <span className="text-sm font-medium">{availabilityRatio}</span>
-          </div>
+          {!isLoyalty && (
+            <>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-medium text-gray-500">
+                  Availability
+                </span>
+                <span className="text-sm font-medium">{availabilityRatio}</span>
+              </div>
 
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-            <div
-              className={`h-2 rounded-full ${getAvailabilityColor()}`}
-              style={{
-                width: `${Math.min(100, (offer.used / offer.total) * 100)}%`,
-              }}
-            ></div>
-          </div>
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                <div
+                  className={`h-2 rounded-full ${getAvailabilityColor()}`}
+                  style={{
+                    width: `${Math.min(100, (offer.used / offer.total) * 100)}%`,
+                  }}
+                ></div>
+              </div>
+            </>
+          )}
+
+          {isLoyalty && (
+            <div className="flex items-center mb-4 text-blue-600">
+              <CreditCard className="w-4 h-4 mr-1" />
+              <span className="text-sm font-medium">Loyalty Program</span>
+            </div>
+          )}
 
           <div className="flex justify-between items-center">
             <span className="font-bold text-lg">
-              {offer.price > 0 ? `£${offer.price}` : "FREE"}
+              {isLoyalty
+                ? offer.price > 0
+                  ? `£${offer.price}/mo`
+                  : "FREE"
+                : offer.price > 0
+                  ? `£${offer.price}`
+                  : "FREE"}
             </span>
             <button
-              className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm transition-colors duration-200"
+              className={`${isLoyalty ? "bg-purple-500 hover:bg-purple-600" : "bg-blue-500 hover:bg-blue-600"} text-white px-3 py-1 rounded-lg text-sm transition-colors duration-200`}
               onClick={(e) => {
                 e.stopPropagation();
                 onClick();
               }}
             >
-              View Details
+              {isLoyalty ? "Learn More" : "View Details"}
             </button>
           </div>
         </div>
