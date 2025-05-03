@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import datetime
 from supabase import create_client, Client
 import openai
 from banking import (
@@ -11,13 +12,6 @@ from banking import (
     fetch_accounts,
     fetch_transactions,
 )
-from ai import get_spending_insights, scrape_best_deals
-from pydantic import BaseModel
-import asyncio
-from typing import List, Dict, Optional
-from datetime import datetime, timedelta
-import json
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class InsightsRequest(BaseModel):
+class InsightsRequest():
     prompt: str
     deal_query: str = None
 
@@ -69,7 +63,7 @@ async def handle_bank_link_callback(ref: str):
             raise HTTPException(status_code=400, detail=result.get("message"))
         requisition = result["requisition"]
         req_id = requisition.get("id")
-        user_id = requisition.get("reference_id")
+        user_id = ref
         # fetch and enqueue all accounts (metadata + transaction jobs)
         accounts = fetch_accounts(req_id, user_id)
         return {"status": "success", "accounts": accounts}
