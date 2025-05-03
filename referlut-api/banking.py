@@ -134,25 +134,25 @@ def fetch_accounts(user_id: str):
     for req in response.data:
         requisition = client.requisition.get_requisition_by_id(req["requisition_id"])
         for account_id in requisition.get("accounts", []):
-            # Get account details from API
-            acct = client.account_api(id=account_id)
-            
             # Skip if we already have this account
-            if acct["id"] in existing_account_ids:
+            if account_id in existing_account_ids:
                 continue
                 
-            acct_info = acct.get_details()
+            # Get account details from API
+            acct = client.account_api(id=account_id)
+            acct_details = acct.get_details()
+            acct_metadata = acct.get_metadata()
             
             # Use the same record structure as the original code
             record = {
-                "account_id": acct["id"],
-                "iban": acct["iban"],
-                "institution_id": acct["institution_id"],
-                "status": acct["status"],
-                "owner_name": acct["owner_name"],
-                "bban": acct["bban"],
-                "name": acct["name"],
-                "currency": acct_info["currency"],
+                "account_id": account_id,
+                "iban": acct_metadata.get("iban", ""),
+                "institution_id": req["institution_id"],
+                "status": acct_metadata.get("status", ""),
+                "owner_name": acct_metadata.get("owner_name", ""),
+                "bban": acct_metadata.get("bban", ""),
+                "name": acct_metadata.get("name", ""),
+                "currency": acct_details.get("currency", ""),
                 "user_id": user_id
             }
             
