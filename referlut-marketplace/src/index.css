@@ -38,3 +38,12 @@ body {
 .pulse-animation {
     animation: pulse-animation 2s infinite;
 }
+
+.html-content a {
+    color: #3b82f6;
+}
+
+.html-content a:hover {
+    color: #1d4ed8;
+    transition: color 0.2s ease;
+}

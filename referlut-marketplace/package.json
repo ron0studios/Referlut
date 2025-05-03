@@ -11,12 +11,15 @@
   },
   "dependencies": {
     "@types/node": "^20.11.24",
+    "dompurify": "^3.2.5",
     "lucide-react": "^0.344.0",
+    "openai": "^4.97.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^8.56.0",
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",

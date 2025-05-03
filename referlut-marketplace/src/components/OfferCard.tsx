@@ -1,19 +1,15 @@
 import React from "react";
-import { Star, Bookmark, CreditCard } from "lucide-react";
+import { Bookmark, CreditCard } from "lucide-react";
 import { Offer } from "../types";
 
 interface OfferCardProps {
   offer: Offer;
-  featured?: boolean;
   onClick: () => void;
 }
 
-const OfferCard: React.FC<OfferCardProps> = ({
-  offer,
-  featured = false,
-  onClick,
-}) => {
+const OfferCard: React.FC<OfferCardProps> = ({ offer, onClick }) => {
   const isLoyalty = offer.type === "loyalty";
+  const isFeatured = offer.featured;
 
   // The availability ratio is only meaningful for referral / charity
   const availabilityRatio = `${offer.used}/${offer.total}`;
@@ -24,42 +20,57 @@ const OfferCard: React.FC<OfferCardProps> = ({
     return "bg-red-500";
   };
 
+  // Decode HTML entities and make it safe for rendering
+  const decodeHTML = (html: string) => {
+    const txt = document.createElement("textarea");
+    txt.innerHTML = html;
+    return txt.value;
+  };
+
   return (
     <div
       onClick={onClick}
       className={`relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col h-full transform hover:-translate-y-1 cursor-pointer ${
-        featured ? "md:col-span-2 lg:col-span-2" : ""
+        isFeatured
+          ? "ring-4 ring-amber-300" // Yellow border for featured offers
+          : "ring-1 ring-gray-100"
       }`}
     >
-      {offer.featured && (
-        <div className="absolute top-3 right-3 z-10">
-          <div className="bg-amber-400 text-xs font-bold px-2 py-1 rounded-full text-amber-800 flex items-center">
-            <Star className="w-3 h-3 mr-1" />
-            FEATURED
-          </div>
+      {/* Top section with brand name and icon */}
+      <div className="relative p-4 border-b">
+        {/* Image as rounded square in top right */}
+        <div className="absolute top-2 right-2 w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-100 shadow-sm">
+          <img
+            src={
+              offer.logo ||
+              "https://images.pexels.com/photos/4195342/pexels-photo-4195342.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1"
+            }
+            alt={offer.brand}
+            className="w-full h-full object-cover"
+          />
         </div>
-      )}
 
-      <div className="relative h-32 overflow-hidden">
-        <img
-          src={
-            offer.logo ||
-            "https://images.pexels.com/photos/4195342/pexels-photo-4195342.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1"
-          }
-          alt={offer.brand}
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-        <div className="absolute bottom-3 left-3 text-white">
-          <h3 className="font-bold text-lg">{offer.brand}</h3>
+        {/* Brand name */}
+        <div className="flex items-center pr-20">
+          <div>
+            <h3 className="font-bold text-lg text-gray-800">{offer.brand}</h3>
+            <div className="text-xs text-gray-500 capitalize">
+              {offer.type} offer
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="p-4 flex-1 flex flex-col">
         <div className="flex justify-between items-start mb-2">
-          <h3 className="font-semibold text-gray-800">{offer.title}</h3>
+          {/* Title with loading state */}
+          <h3
+            className={`font-semibold text-gray-800 line-clamp-1 ${offer.isTitleLoading ? "animate-pulse blur-sm" : ""}`}
+          >
+            {offer.title}
+          </h3>
           <button
-            className="text-gray-400 hover:text-blue-500"
+            className="text-gray-400 hover:text-blue-500 flex-shrink-0 ml-2"
             onClick={(e) => {
               e.stopPropagation();
               // Handle bookmark
@@ -69,7 +80,16 @@ const OfferCard: React.FC<OfferCardProps> = ({
           </button>
         </div>
 
-        <p className="text-gray-600 text-sm mb-4 flex-1">{offer.description}</p>
+        {/* Description with fade effect */}
+        <div className="relative flex-1 mb-4">
+          <div
+            className="text-gray-600 text-sm overflow-hidden max-h-[4.5rem] html-content"
+            dangerouslySetInnerHTML={{ __html: decodeHTML(offer.description) }}
+          />
+
+          {/* Fade-out gradient overlay */}
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
+        </div>
 
         <div className="mt-auto">
           {!isLoyalty && (
@@ -78,12 +98,17 @@ const OfferCard: React.FC<OfferCardProps> = ({
                 <span className="text-sm font-medium text-gray-500">
                   Availability
                 </span>
-                <span className="text-sm font-medium">{availabilityRatio}</span>
+                {/* Total with loading state */}
+                <span
+                  className={`text-sm font-medium ${offer.isTotalLoading ? "animate-pulse blur-sm" : ""}`}
+                >
+                  {availabilityRatio}
+                </span>
               </div>
 
               <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
                 <div
-                  className={`h-2 rounded-full ${getAvailabilityColor()}`}
+                  className={`h-2 rounded-full ${getAvailabilityColor()} ${offer.isTotalLoading ? "animate-pulse opacity-50" : ""}`}
                   style={{
                     width: `${Math.min(100, (offer.used / offer.total) * 100)}%`,
                   }}
