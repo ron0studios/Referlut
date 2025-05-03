@@ -184,7 +184,7 @@ def fetch_transactions(account_id: str, months: int = 12):
     existing_tx_ids = {tx["transaction_id"] for tx in existing_tx_response.data if tx["transaction_id"]}
     
     acct = client.account_api(id=account_id)
-    tx_resp = acct.get_transactions()
+    tx_resp = acct.get_transactions(date_from=start_date.isoformat(), date_to=end_date.isoformat())
     raw_txs = []
     raw_txs.extend(tx_resp.get("transactions", {}).get("booked", []))
     raw_txs.extend(tx_resp.get("transactions", {}).get("pending", []))
@@ -216,18 +216,24 @@ def fetch_transactions(account_id: str, months: int = 12):
         amt = t.get("transactionAmount", {})
         amt_val = float(amt.get("amount", 0))
         curr = amt.get("currency")
+        # Helper function to safely truncate string values
+        def safe_str(value, max_length=10):
+            if value and isinstance(value, str):
+                return value[:max_length]
+            return value
+            
         record = {
             "transaction_id": t.get("transactionId"),
-            "entry_reference": t.get("entryReference"),
-            "internal_transaction_id": t.get("internalTransactionId"),
-            "additional_information": t.get("additionalInformation"),
-            "merchant_name": t.get("remittanceInformationUnstructured"),
+            "entry_reference": safe_str(t.get("entryReference")),
+            "internal_transaction_id": safe_str(t.get("internalTransactionId")),
+            "additional_information": safe_str(t.get("additionalInformation")),
+            "merchant_name": safe_str(t.get("remittanceInformationUnstructured"), 255),  # Likely needs more space
             "amount": amt_val,
-            "currency": curr,
+            "currency": safe_str(curr),
             "booking_date": t.get("bookingDate"),
             "value_date": t.get("valueDate"),
-            "proprietary_bank_transaction_code": pcode,
-            "category": category
+            "proprietary_bank_transaction_code": safe_str(pcode),
+            "category": safe_str(category)
         }
         # Only insert new transactions
         supabase.table("transactions").insert(record).execute()
