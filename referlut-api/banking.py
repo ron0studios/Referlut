@@ -176,15 +176,20 @@ def fetch_transactions(account_id: str, months: int = 12):
     Fetch transactions via GET /accounts/{id}/transactions, flatten booked and pending,
     filter by date within 'months', categorize by merchant codes, and return list.
     """
+    # Calculate date range
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30 * months)
     
+    # Format dates as YYYY-MM-DD for API call
+    end_date_formatted = end_date.strftime("%Y-%m-%d")
+    start_date_formatted = start_date.strftime("%Y-%m-%d")
+
     # First, get existing transactions from Supabase
     existing_tx_response = supabase.table("transactions").select("transaction_id").execute()
     existing_tx_ids = {tx["transaction_id"] for tx in existing_tx_response.data if tx["transaction_id"]}
     
     acct = client.account_api(id=account_id)
-    tx_resp = acct.get_transactions(date_from=start_date.isoformat(), date_to=end_date.isoformat())
+    tx_resp = acct.get_transactions(date_from=start_date_formatted, date_to=end_date_formatted)
     raw_txs = []
     raw_txs.extend(tx_resp.get("transactions", {}).get("booked", []))
     raw_txs.extend(tx_resp.get("transactions", {}).get("pending", []))
