@@ -5,9 +5,10 @@ import { Offer } from "../../types/marketplace/marketplace";
 interface OfferCardProps {
   offer: Offer;
   onClick: () => void;
+  featured?: boolean;
 }
 
-const OfferCard: React.FC<OfferCardProps> = ({ offer, onClick }) => {
+const OfferCard: React.FC<OfferCardProps> = ({ offer, onClick, featured }) => {
   const isLoyalty = offer.type === "loyalty";
   const isFeatured = offer.featured;
 

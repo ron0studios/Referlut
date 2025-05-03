@@ -20,7 +20,7 @@ const OffersGrid: React.FC<OffersGridProps> = ({ offers, onOfferClick }) => {
               <OfferCard
                 key={offer.id}
                 offer={offer}
-                featured
+                featured={true}
                 onClick={() => onOfferClick(offer)}
               />
             ))}
