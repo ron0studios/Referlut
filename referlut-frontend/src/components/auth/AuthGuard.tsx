@@ -26,11 +26,12 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   }
 
   // If authenticated, but bank not connected, redirect to bank selection
-  // unless already on the bank selection page.
+  // unless already on the bank selection or bank callback page.
   if (
     isAuthenticated &&
     hasConnectedBank === false &&
-    location.pathname !== "/bank-selection"
+    location.pathname !== "/bank-selection" &&
+    location.pathname !== "/bank-callback" // <-- Ensure this condition is present
   ) {
     return <Navigate to="/bank-selection" state={{ from: location }} replace />;
   }

@@ -129,8 +129,8 @@ def handle_requisition_callback(ref: str):
     # First try to find the requisition by reference (user_id)
     response = supabase.table("requisitions").select("*").eq("user_id", ref).order("created_at", desc=True).limit(1).execute()
 
-    if not response.data:
-        raise Exception("No requisition found for this reference")
+    if response.data:
+        return {"status": "success", "message": "Requisition already linked"}
 
     requisition_id = response.data[0]["requisition_id"]
 

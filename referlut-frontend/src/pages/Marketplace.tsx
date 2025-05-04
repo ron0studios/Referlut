@@ -1,5 +1,5 @@
 // src/pages/Marketplace.tsx
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
 import Header from "@/components/Header"; // Using main application header
 import Navigation from "@/components/marketplace/Navigation";
@@ -52,6 +52,20 @@ function Marketplace() {
     loadData();
   }, []);
 
+  // Function to handle page changes
+  const handlePageChange = useCallback(
+    async (newPage: number) => {
+      if (activeTab === "referral") {
+        setLoading(true);
+        const pageOffers = await loadPage(newPage);
+        setOffers(pageOffers);
+        setPage(newPage);
+        setLoading(false);
+      }
+    },
+    [activeTab]
+  ); // Dependencies for useCallback
+
   // Effect to handle tab changes
   useEffect(() => {
     if (dataReady) {
@@ -66,46 +80,7 @@ function Marketplace() {
         handlePageChange(0);
       }
     }
-  }, [activeTab, brandFilter, dataReady]);
-
-  useEffect(() => {
-    // Only run this effect when we have offers and when in the referral tab
-    if (offers.length > 0 && activeTab === "referral") {
-      // Check if any offers are still loading content
-      const hasLoadingContent = offers.some(
-        (offer) => offer.isTitleLoading || offer.isTotalLoading
-      );
-
-      if (hasLoadingContent) {
-        // Set up an interval to periodically update the UI as content loads
-        const intervalId = setInterval(() => {
-          // Create a new array reference to force a re-render
-          setOffers([...offers]);
-
-          // If everything has finished loading, we can clear the interval
-          if (!offers.some((o) => o.isTitleLoading || o.isTotalLoading)) {
-            console.log("All content loaded!");
-          }
-        }, 500); // Check every 500ms
-
-        // Clean up the interval when the component unmounts or dependencies change
-        return () => {
-          clearInterval(intervalId);
-        };
-      }
-    }
-  }, [offers, activeTab]);
-
-  // Function to handle page changes
-  const handlePageChange = async (newPage: number) => {
-    if (activeTab === "referral") {
-      setLoading(true);
-      const pageOffers = await loadPage(newPage);
-      setOffers(pageOffers);
-      setPage(newPage);
-      setLoading(false);
-    }
-  };
+  }, [activeTab, brandFilter, dataReady, handlePageChange]); // Added handlePageChange
 
   const handleTabChange = (tab: "referral" | "loyalty" | "charity") => {
     setActiveTab(tab);
@@ -176,12 +151,16 @@ function Marketplace() {
       </main>
 
       <MessagesPanel
-        user={user ? {
-          ...user,
-          name: user.email || 'Anonymous',
-          avatar: user.user_metadata?.avatar_url || '/default-avatar.png',
-          unreadMessages: 0
-        } : null}
+        user={
+          user
+            ? {
+                ...user,
+                name: user.email || "Anonymous",
+                avatar: user.user_metadata?.avatar_url || "/default-avatar.png",
+                unreadMessages: 0,
+              }
+            : null
+        }
       />
 
       <CreateOfferModal
