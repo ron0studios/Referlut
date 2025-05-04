@@ -995,7 +995,7 @@ If no specific limit is mentioned, analyze the program and suggest a reasonable 
 Only respond with a number (no text).`;
 
     const response = await openai.chat.completions.create({
-      model: "o3-2025-04-16",
+      model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
@@ -1004,7 +1004,7 @@ Only respond with a number (no text).`;
         },
         { role: "user", content: prompt },
       ],
-      max_tokens: 10,
+      max_completion_tokens: 10,
       temperature: 0.3,
     });
 
