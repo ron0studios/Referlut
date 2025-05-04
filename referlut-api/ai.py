@@ -6,9 +6,14 @@ from datetime import datetime
 from openai import AsyncOpenAI
 import asyncio
 import random
+import logging
+import os
 
 # Initialize OpenAI client
 client = AsyncOpenAI()
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class Transaction(BaseModel):
     transactionId: str
@@ -21,11 +26,12 @@ class Transaction(BaseModel):
     entryReference: Optional[str] = None
     additionalInformation: Optional[str] = None
     creditorName: Optional[str] = None
-    creditorAccount: Optional[Dict] = None
+    creditorAccount: Optional[str] = None
     debtorName: Optional[str] = None
-    debtorAccount: Optional[Dict] = None
+    debtorAccount: Optional[str] = None
     bookingDateTime: Optional[str] = None
     valueDateTime: Optional[str] = None
+    category: Optional[str] = None
 
 class SpendingTip(BaseModel):
     category: str = Field(description="The spending category this tip applies to")
@@ -49,58 +55,68 @@ class Deal(BaseModel):
 
 async def classify_transaction_with_llm(transaction: Transaction) -> str:
     """
-    Use LLM to classify a transaction into a spending category or income type.
+    Classify a transaction into a category using OpenAI's GPT model.
     """
-    amount = float(transaction.transactionAmount["amount"])
-
-    # Handle income and rewards
-    if amount > 0:
-        # Check if it's cashback or rewards
-        description = transaction.remittanceInformationUnstructured.lower()
-        if any(keyword in description for keyword in ["cashback", "reward", "interest", "refund"]):
-            return "Rewards"
-        return "Income"
-
-    # Prepare the prompt for the LLM
-    prompt = f"""
-    Analyze this transaction and classify it into one of these categories:
-    - Groceries (food, household items from supermarkets, grocery stores)
-    - Transportation (trains, buses, taxis, fuel)
-    - Dining Out (restaurants, cafes, pubs, takeaway)
-    - Entertainment (movies, streaming services, events)
-    - Shopping (retail stores, online shopping, clothing, electronics)
-    - Bills (utilities, rent, subscriptions)
-    - Other (anything that doesn't fit above)
-
-    Transaction details:
-    - Amount: {transaction.transactionAmount['amount']} {transaction.transactionAmount['currency']}
-    - Description: {transaction.remittanceInformationUnstructured}
-    - Date: {transaction.bookingDate}
-    - Additional Info: {transaction.additionalInformation if transaction.additionalInformation else 'None'}
-
-    Return ONLY the category name, nothing else.
-    """
-
     try:
+        # Extract relevant information for classification
+        description = transaction.remittanceInformationUnstructured
+        amount = transaction.transactionAmount.get("amount", "0")
+        date = transaction.bookingDate
+        tx_type = "debit" if float(amount) < 0 else "credit"
+
+        # Create a prompt for the AI
+        prompt = f"""
+        Analyze this transaction and classify it into one of these categories:
+        - groceries (food, household items from supermarkets)
+        - transportation (public transport, fuel, car maintenance)
+        - dining_out (restaurants, cafes, takeout)
+        - entertainment (movies, events, subscriptions)
+        - shopping (clothes, electronics, general retail)
+        - bills (utilities, rent, subscriptions)
+        - other (anything that doesn't fit above)
+
+        Transaction details:
+        Description: {description}
+        Amount: {amount}
+        Date: {date}
+        Type: {tx_type}
+
+        Respond with ONLY the category name, nothing else.
+        """
+
+        # Call OpenAI API
         response = await client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a financial transaction classifier. Respond with ONLY the category name."},
+                {"role": "system", "content": "You are a financial transaction classifier. Respond with only the category name."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1  # Low temperature for consistent categorization
+            temperature=0.3,
+            max_tokens=10
         )
+
+        # Extract and validate the category
         content = response.choices[0].message.content
-        category = content.strip() if content is not None else "Other"
-        print(f"Classified transaction '{transaction.remittanceInformationUnstructured}' as {category}")
+        if not content:
+            logger.warning("Empty response from AI. Defaulting to other category.")
+            return "other"
+
+        category = content.strip().lower()
+        valid_categories = ["groceries", "transportation", "dining_out", "entertainment", "shopping", "bills", "other"]
+
+        if category not in valid_categories:
+            logger.warning(f"Invalid category returned by AI: {category}")
+            return "other"
+
         return category
+
     except Exception as e:
-        print(f"Error classifying transaction: {e}")
-        return "Other"
+        logger.error(f"Error classifying transaction: {str(e)}")
+        return "other"
 
 async def analyze_transactions(transactions: List[Transaction]) -> SpendingAnalysis:
     """
-    Analyze raw transactions to generate spending statistics.
+    Analyze a list of transactions and return spending insights.
     """
     category_spending = {}
     top_merchants = {}
@@ -277,100 +293,103 @@ def create_fallback_deals(category: str) -> List[Dict[str, Any]]:
         ],
         "Transportation": [
             {
-                "title": "30% off off-peak train travel",
-                "description": "Save on off-peak journeys with a railcard",
-                "merchant": "National Rail",
-                "discount": "30% off",
-                "url": "https://www.nationalrail.co.uk"
+                "title": "20% off first ride with Uber",
+                "description": "New users get 20% off their first ride",
+                "merchant": "Uber",
+                "discount": "20% off",
+                "expires": "Limited time"
             },
             {
-                "title": "10% off with Uber",
-                "description": "Use code SAVE10 for 10% off your next ride",
-                "merchant": "Uber",
-                "discount": "10% off",
-                "expires": "Next week"
+                "title": "Save 1/3 on rail fares",
+                "description": "Book advance tickets and save up to 1/3",
+                "merchant": "National Rail",
+                "discount": "Up to 1/3 off",
+                "expires": "Book 12 weeks ahead"
             }
         ],
         "Dining Out": [
             {
-                "title": "2 for 1 main courses at Pizza Express",
-                "description": "Buy one main course and get one free",
+                "title": "50% off at Pizza Express",
+                "description": "Get 50% off food Monday-Thursday",
                 "merchant": "Pizza Express",
-                "discount": "2 for 1",
-                "expires": "Valid Sunday to Thursday"
+                "discount": "50% off",
+                "expires": "End of month"
             },
             {
-                "title": "25% off food bill at Prezzo",
-                "description": "Register for Prezzo's newsletter to get 25% off",
-                "merchant": "Prezzo",
-                "discount": "25% off"
+                "title": "Free delivery on first order",
+                "description": "New customers get free delivery",
+                "merchant": "Deliveroo",
+                "discount": "Free delivery",
+                "expires": "First order only"
             }
         ],
         "Entertainment": [
             {
-                "title": "3 months free Apple TV+",
-                "description": "New subscribers get 3 months of Apple TV+ free",
-                "merchant": "Apple",
-                "discount": "100% off for 3 months",
-                "url": "https://www.apple.com/apple-tv-plus/"
+                "title": "3 months free Disney+",
+                "description": "New subscribers get 3 months free",
+                "merchant": "Disney+",
+                "discount": "3 months free",
+                "expires": "Limited time"
             },
             {
-                "title": "2 for 1 cinema tickets on Tuesdays & Wednesdays",
-                "description": "Get 2 tickets for the price of 1 with Meerkat Movies",
-                "merchant": "Compare the Market",
-                "discount": "2 for 1"
+                "title": "2 for 1 cinema tickets",
+                "description": "Valid on Tuesdays and Wednesdays",
+                "merchant": "Odeon",
+                "discount": "2 for 1",
+                "expires": "Ongoing"
             }
         ],
         "Shopping": [
             {
-                "title": "20% off first order at ASOS",
-                "description": "Use code NEWCUSTOMER for 20% off",
+                "title": "20% off first order",
+                "description": "New customers get 20% off",
                 "merchant": "ASOS",
                 "discount": "20% off",
-                "expires": "For new customers only"
+                "expires": "First order only"
             },
             {
-                "title": "Free delivery over £30 at Boots",
-                "description": "Free standard delivery on orders over £30",
-                "merchant": "Boots",
-                "discount": "Free delivery"
+                "title": "Student discount",
+                "description": "Get 10% off with valid student ID",
+                "merchant": "UNIQLO",
+                "discount": "10% off",
+                "expires": "Ongoing"
             }
         ],
         "Bills": [
             {
-                "title": "£130 for switching energy providers",
-                "description": "Switch to Octopus Energy and get £130 credit",
-                "merchant": "Octopus Energy",
-                "discount": "£130 credit",
-                "url": "https://octopus.energy"
+                "title": "Switch and save",
+                "description": "Save up to £200 by switching energy provider",
+                "merchant": "British Gas",
+                "discount": "Up to £200",
+                "expires": "Limited time"
             },
             {
-                "title": "50% off first 3 months of broadband",
-                "description": "New customers get half price broadband for 3 months",
+                "title": "Bundle and save",
+                "description": "Save 20% by bundling broadband and TV",
                 "merchant": "Virgin Media",
-                "discount": "50% off"
+                "discount": "20% off",
+                "expires": "Limited time"
+            }
+        ],
+        "Other": [
+            {
+                "title": "Free delivery",
+                "description": "Free delivery on orders over £20",
+                "merchant": "Amazon",
+                "discount": "Free delivery",
+                "expires": "Ongoing"
+            },
+            {
+                "title": "Cashback rewards",
+                "description": "Earn 5% cashback on purchases",
+                "merchant": "TopCashback",
+                "discount": "5% cashback",
+                "expires": "Ongoing"
             }
         ]
     }
 
-    # Default deals if category not found
-    default_deals = [
-        {
-            "title": "Cashback on spending",
-            "description": "Get up to 5% cashback on all your spending with a cashback credit card",
-            "merchant": "Various banks",
-            "discount": "Up to 5% cashback"
-        },
-        {
-            "title": "Save with a Lifetime ISA",
-            "description": "Get 25% government bonus on savings up to £4,000 per year",
-            "merchant": "UK Government",
-            "discount": "25% bonus"
-        }
-    ]
-
-    # Return category-specific deals or defaults
-    return category_deals.get(category, default_deals)
+    return category_deals.get(category, category_deals["Other"])
 
 async def analyze_spending_patterns(spending_data: SpendingAnalysis) -> List[SpendingTip]:
     """
@@ -443,78 +462,112 @@ async def analyze_spending_patterns(spending_data: SpendingAnalysis) -> List[Spe
 
     return tips
 
-async def get_expert_tips(spending_data: Dict) -> List[Dict]:
+async def get_expert_tips(spending_data: Dict) -> List[str]:
     """
-    Generate personalized spending tips based on transaction analysis.
+    Generate personalized financial advice using OpenAI's GPT model based on spending patterns.
     """
-    # Convert input data to structured model
-    analysis = SpendingAnalysis(**spending_data)
+    try:
+        # Check if OpenAI API key is configured
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            print("ERROR: OpenAI API key not found in environment variables")
+            return get_fallback_tips()
 
-    print(f"Generating tips for spending data: {spending_data}")
+        print("\n=== OpenAI Configuration ===")
+        print("API Key configured:", "Yes" if api_key else "No")
 
-    tips = []
+        # Extract spending data
+        category_spending = spending_data.get("category_spending", {})
+        weekly_averages = spending_data.get("weekly_averages", {})
 
-    # Generate tips based on spending patternsfixes line endings
-    for category, amount in analysis.category_spending.items():
-        # Calculate monthly average
-        monthly_amount = amount / len(analysis.monthly_spending)
-        print(f"Category {category}: Monthly amount = {monthly_amount}")
+        print("\n=== Preparing AI Prompt ===")
+        print("Category Spending:", json.dumps(category_spending, indent=2))
+        print("Weekly Averages:", json.dumps(weekly_averages, indent=2))
 
-        # Generate category-specific tips
-        if category == "Groceries":
-            if monthly_amount > 400:
-                tips.append(SpendingTip(
-                    category=category,
-                    current_spending=monthly_amount,
-                    tip="Consider meal planning and bulk buying to reduce grocery costs",
-                    potential_savings=monthly_amount * 0.15,
-                    alternatives=["Aldi", "Lidl", "Tesco Clubcard", "Sainsbury's Nectar"]
-                ))
-        elif category == "Dining Out":
-            if monthly_amount > 200:
-                tips.append(SpendingTip(
-                    category=category,
-                    current_spending=monthly_amount,
-                    tip="Try cooking at home more often and use meal prep to save time",
-                    potential_savings=monthly_amount * 0.4,
-                    alternatives=["HelloFresh", "Gousto", "Meal prep recipes"]
-                ))
-        elif category == "Transportation":
-            if monthly_amount > 150:
-                tips.append(SpendingTip(
-                    category=category,
-                    current_spending=monthly_amount,
-                    tip="Consider using a railcard or season ticket for regular travel",
-                    potential_savings=monthly_amount * 0.3,
-                    alternatives=["Railcard", "Season ticket", "Car sharing"]
-                ))
-        elif category == "Entertainment":
-            if monthly_amount > 100:
-                tips.append(SpendingTip(
-                    category=category,
-                    current_spending=monthly_amount,
-                    tip="Bundle your streaming services or share accounts with family",
-                    potential_savings=monthly_amount * 0.5,
-                    alternatives=["Family sharing plans", "Student discounts"]
-                ))
-        elif category == "Shopping":
-            if monthly_amount > 300:
-                tips.append(SpendingTip(
-                    category=category,
-                    current_spending=monthly_amount,
-                    tip="Use cashback websites and wait for sales before making purchases",
-                    potential_savings=monthly_amount * 0.2,
-                    alternatives=["Quidco", "TopCashback", "Honey browser extension"]
-                ))
-        elif category == "Bills":
-            if monthly_amount > 500:
-                tips.append(SpendingTip(
-                    category=category,
-                    current_spending=monthly_amount,
-                    tip="Compare utility providers and consider switching to save money",
-                    potential_savings=monthly_amount * 0.1,
-                    alternatives=["Uswitch", "MoneySuperMarket", "Compare the Market"]
-                ))
+        # Create a detailed prompt for the AI
+        prompt = f"""
+        Based on this user's spending data, provide 5 specific, actionable financial tips.
+        Focus on their actual spending patterns and provide personalized advice.
 
-    print(f"Generated {len(tips)} tips")
-    return [tip.model_dump() for tip in tips]
+        Category Spending:
+        {json.dumps(category_spending, indent=2)}
+
+        Weekly Averages:
+        {json.dumps(weekly_averages, indent=2)}
+
+        Provide tips that are:
+        1. Specific to their spending patterns
+        2. Actionable and practical
+        3. Focused on saving money
+        4. Based on their actual spending data
+        5. Personalized to their lifestyle
+
+        For each tip:
+        - Reference specific spending amounts
+        - Suggest concrete actions
+        - Explain potential savings
+        - Consider their spending habits
+
+        Return the tips as a JSON array of strings.
+        """
+
+        print("\n=== Calling OpenAI API ===")
+        print("Using model: gpt-3.5-turbo")
+
+        try:
+            # Call OpenAI API
+            response = await client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial advisor providing personalized money-saving tips based on actual spending data."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                response_format={"type": "json_object"}
+            )
+
+            content = response.choices[0].message.content
+            print("\n=== API Response ===")
+            print("Raw response:", content)
+
+            if not content:
+                print("No content in API response, using fallback tips")
+                return get_fallback_tips()
+
+            try:
+                tips_data = json.loads(content)
+                tips = tips_data.get("tips", [])
+                if not tips or not isinstance(tips, list):
+                    print("Invalid tips format in API response, using fallback tips")
+                    return get_fallback_tips()
+
+                print("\n=== Parsed Tips ===")
+                for i, tip in enumerate(tips, 1):
+                    print(f"{i}. {tip}")
+
+                return tips
+
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON from response: {e}")
+                print("Raw content:", content)
+                return get_fallback_tips()
+
+        except Exception as api_error:
+            print(f"OpenAI API Error: {str(api_error)}")
+            print("API Error Details:", api_error.__class__.__name__)
+            return get_fallback_tips()
+
+    except Exception as e:
+        print(f"Error generating expert tips: {e}")
+        print("Error Details:", e.__class__.__name__)
+        return get_fallback_tips()
+
+def get_fallback_tips() -> List[str]:
+    """Provide fallback tips when the API fails"""
+    return [
+        "Your weekly grocery spending is high. Consider meal planning and bulk buying to reduce costs by 20%.",
+        "You're spending significantly on dining out. Try cooking at home 3 nights a week to save £150 monthly.",
+        "Your transportation costs are above average. Look into carpooling or public transport options to cut costs by 30%.",
+        "Entertainment subscriptions are adding up. Consider sharing accounts with family or rotating services to save £50 monthly.",
+        "Your shopping expenses are high. Wait for sales and use cashback apps to save 10-15% on purchases."
+    ]
