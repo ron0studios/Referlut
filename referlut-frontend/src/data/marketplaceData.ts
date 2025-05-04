@@ -658,6 +658,73 @@ export const mockOffers: Offer[] = [
     logo: "https://images.pexels.com/photos/6224383/pexels-photo-6224383.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
     createdAt: getRandomDate(),
   },
+  {
+    id: "c1",
+    brand: "Oxfam",
+    type: "charity",
+    title: "Double Your Impact: Oxfam Clean Water Initiative",
+    description:
+      "Join our donation pool for Oxfam's Clean Water Initiative where every £1 you donate will be matched by corporate partners. Your contribution helps provide clean, safe drinking water to communities facing water scarcity around the world. This pool runs until the end of the month!",
+    used: 12,
+    total: 25,
+    price: 15,
+    logo: "https://images.pexels.com/photos/416528/pexels-photo-416528.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1", // Water-related image
+    createdAt: getRandomDate(),
+    featured: true,
+  },
+  {
+    id: "c2",
+    brand: "Save the Children",
+    type: "charity",
+    title: "Emergency Relief Fund: Triple Match",
+    description:
+      "Contribute to our student-led donation pool for Save the Children's Emergency Relief Fund. For this week only, two corporate sponsors will triple-match all donations, meaning your £10 becomes £30! Help provide immediate aid to children affected by conflict, disaster, and crisis around the world.",
+    used: 18,
+    total: 30,
+    price: 10,
+    logo: "https://images.pexels.com/photos/1912868/pexels-photo-1912868.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1", // Children-related image
+    createdAt: getRandomDate(),
+  },
+  {
+    id: "c3",
+    brand: "WWF",
+    type: "charity",
+    title: "Campus Conservation Challenge",
+    description:
+      "Join fellow students in our WWF donation pool for habitat conservation. We're collecting donations throughout the term with a goal of £1,000 total. A local business has pledged to match the first £500 raised. Your contribution helps protect endangered species and their habitats from deforestation and climate change impacts.",
+    used: 22,
+    total: 40,
+    price: 5,
+    logo: "https://images.pexels.com/photos/247431/pexels-photo-247431.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1", // Wildlife-related image
+    createdAt: getRandomDate(),
+  },
+  {
+    id: "c4",
+    brand: "Mental Health Foundation",
+    type: "charity",
+    title: "Student Wellbeing Fundraiser",
+    description:
+      "Support mental health initiatives on campus and beyond. Our donation pool for the Mental Health Foundation aims to fund student counseling resources and research into student mental health. For every 5 participants who join, an anonymous donor will add an additional £100 to our pool. Help break the stigma around mental health!",
+    used: 8,
+    total: 15,
+    price: 8,
+    logo: "https://images.pexels.com/photos/3758039/pexels-photo-3758039.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1", // Mental health-related image
+    createdAt: getRandomDate(),
+    featured: true,
+  },
+  {
+    id: "c5",
+    brand: "Local Food Bank",
+    type: "charity",
+    title: "End Hunger on Campus and Beyond",
+    description:
+      "Join our community donation pool supporting the local food bank. Every £20 raised provides a food parcel for a student or local family in need. University staff have pledged to match all student donations up to £500 total. Let's fight food insecurity together - no one should have to choose between books and meals.",
+    used: 15,
+    total: 30,
+    price: 20,
+    logo: "https://images.pexels.com/photos/6994932/pexels-photo-6994932.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1", // Food bank-related image
+    createdAt: getRandomDate(),
+  },
 ];
 
 const pageCache = new Map<number, Offer[]>();
@@ -679,12 +746,24 @@ export const dataLoadingPromise = (async () => {
 })();
 
 // Function to load a specific page
-export async function loadPage(page: number): Promise<Offer[]> {
+export async function loadPage(
+  page: number,
+  brandFilter?: string | null,
+): Promise<Offer[]> {
   try {
     // Check if we already have this page cached
     if (pageCache.has(page)) {
       currentPage = page;
-      return pageCache.get(page)!;
+      let offers = pageCache.get(page)!;
+
+      // Apply brand filter if specified
+      if (brandFilter) {
+        offers = offers.filter((offer) =>
+          offer.brand.toLowerCase().includes(brandFilter.toLowerCase()),
+        );
+      }
+
+      return offers;
     }
 
     isLoadingPage = true;
@@ -703,6 +782,13 @@ export async function loadPage(page: number): Promise<Offer[]> {
     console.log(
       `Loaded page ${page + 1} of ${totalPages} (${offers.length} offers)`
     );
+
+    // Apply brand filter if specified
+    if (brandFilter) {
+      return offers.filter((offer) =>
+        offer.brand.toLowerCase().includes(brandFilter.toLowerCase()),
+      );
+    }
 
     return offers;
   } catch (error) {

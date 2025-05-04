@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Search, X } from "lucide-react";
 
 interface BrandFilterProps {
@@ -14,11 +14,52 @@ const BrandFilter: React.FC<BrandFilterProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Handle clicks outside of the component
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    // Handle escape key
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscapeKey);
+
+    // Clean up
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscapeKey);
+    };
+  }, []);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-    if (e.target.value === "") {
+    const value = e.target.value;
+    setSearchTerm(value);
+
+    // If search box has content, show dropdown
+    if (value.length > 0) {
+      setIsOpen(true);
+    }
+
+    // Apply filter as you type
+    if (value === "") {
       onFilterChange(null);
+    } else {
+      onFilterChange(value);
     }
   };
 
@@ -26,11 +67,27 @@ const BrandFilter: React.FC<BrandFilterProps> = ({
     setSearchTerm(brand);
     onFilterChange(brand);
     setIsOpen(false);
+    // Blur input after selection
+    if (inputRef.current) {
+      inputRef.current.blur();
+    }
   };
 
   const clearSearch = () => {
     setSearchTerm("");
     onFilterChange(null);
+    setIsOpen(false);
+    // Focus input after clearing
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  const handleInputFocus = () => {
+    // Only open dropdown if there's a search term
+    if (searchTerm.length > 0 && !isLoading) {
+      setIsOpen(true);
+    }
   };
 
   const filteredBrands = brands.filter((brand) =>
@@ -38,7 +95,7 @@ const BrandFilter: React.FC<BrandFilterProps> = ({
   );
 
   return (
-    <div className="relative w-full max-w-md">
+    <div className="relative w-full max-w-md" ref={containerRef}>
       <div className="relative">
         <Search
           className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
@@ -46,11 +103,12 @@ const BrandFilter: React.FC<BrandFilterProps> = ({
           }`}
         />
         <input
+          ref={inputRef}
           type="text"
-          placeholder={isLoading ? "Loading brands..." : "Filter by brand"}
+          placeholder={isLoading ? "Loading brands..." : "Search by brand"}
           value={searchTerm}
           onChange={handleSearch}
-          onFocus={() => !isLoading && setIsOpen(true)}
+          onFocus={handleInputFocus}
           className={`w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none ${
             isLoading
               ? "bg-gray-100 text-gray-400 cursor-not-allowed"

@@ -28,7 +28,7 @@ interface ChartContainerProps {
 }
 
 interface ChartData {
-  month: string;
+  week: string;
   total: number;
   categories: {
     [key: string]: number;
@@ -141,17 +141,25 @@ export function FinancialChart() {
         );
 
         if (data.success) {
-          setChartData(data.data);
+          if (!data.data || data.data.length === 0) {
+            setError("No spending data available");
+            setChartData([]);
+          } else {
+            setChartData(data.data);
+          }
         } else {
           setError(data.error || "Failed to fetch chart data");
+          setChartData([]);
         }
       } catch (err) {
-        setError("Failed to fetch chart data");
+        const errorMessage = err instanceof Error ? err.message : "Failed to fetch chart data";
+        setError(errorMessage);
         console.error("Error fetching chart data:", err);
+        setChartData([]);
       } finally {
         setLoading(false);
       }
-    };
+    }
 
     fetchChartData();
   }, [selectedCategory, isAuthenticated, session]);
@@ -179,7 +187,7 @@ export function FinancialChart() {
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="groceries">Groceries</TabsTrigger>
             <TabsTrigger value="transportation">Transport</TabsTrigger>
-            <TabsTrigger value="dining out">Dining</TabsTrigger>
+            <TabsTrigger value="dining_out">Dining</TabsTrigger>
             <TabsTrigger value="entertainment">Entertainment</TabsTrigger>
             <TabsTrigger value="shopping">Shopping</TabsTrigger>
             <TabsTrigger value="bills">Bills</TabsTrigger>
@@ -188,11 +196,26 @@ export function FinancialChart() {
           <TabsContent value={selectedCategory}>
             {loading ? (
               <div className="h-[200px] flex items-center justify-center">
-                Loading chart data...
+                <div className="flex flex-col items-center gap-2">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <span>Loading chart data...</span>
+                </div>
               </div>
             ) : error ? (
-              <div className="h-[200px] flex items-center justify-center text-red-500">
-                {error}
+              <div className="h-[200px] flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-red-500 mb-2">{error}</div>
+                  <button
+                    onClick={() => setSelectedCategory(selectedCategory)}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              </div>
+            ) : chartData.length === 0 ? (
+              <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                No spending data available for this period
               </div>
             ) : (
               <ChartContainer config={chartConfig}>
@@ -209,12 +232,12 @@ export function FinancialChart() {
                 >
                   <CartesianGrid vertical={false} />
                   <XAxis
-                    dataKey="month"
+                    dataKey="week"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={8}
                     tickFormatter={formatWeekRange}
-                    interval={2} // Show every 3rd week label for clarity
+                    interval={2}
                   />
                   <Tooltip
                     formatter={(value: number) => [
@@ -239,12 +262,13 @@ export function FinancialChart() {
           </TabsContent>
         </Tabs>
       </CardContent>
-      <CardFooter className="flex flex-col items-start gap-2 mt-6">
-        <div className="flex gap-2 font-medium leading-none text-green-600">
-          Trending {calculateTrend() > 0 ? "up" : "down"} by{" "}
-          {Math.abs(calculateTrend()).toFixed(1)}% this week{" "}
-          <TrendingUp className="h-4 w-4" />
-        </div>
+      <CardFooter className="flex flex-col items-start gap-2">
+        {chartData.length >= 2 && (
+          <div className="flex gap-2 font-medium leading-none text-green-600">
+            Trending {calculateTrend() > 0 ? "up" : "down"} by {Math.abs(calculateTrend()).toFixed(1)}% this week{" "}
+            <TrendingUp className="h-4 w-4" />
+          </div>
+        )}
         <div className="leading-none text-muted-foreground">
           Showing spending in GBP for the last 90 days
         </div>

@@ -13,6 +13,10 @@ export interface Offer {
   createdAt: Date;
   isTitleLoading?: boolean;
   isTotalLoading?: boolean;
+  // Add these new fields
+  status?: "active" | "expired" | "limited" | "unknown";
+  statusDetails?: string;
+  isStatusLoading?: boolean;
 }
 
 export interface User {

@@ -14,8 +14,21 @@ const LogoutButton = ({ className }: { className?: string }) => {
     }
   };
 
+  const handleLogout = () => {
+    // Clear token from localStorage
+    localStorage.removeItem('token');
+
+    // Logout from Auth0
+    logout({
+      logoutParams: { returnTo: window.location.origin },
+    });
+  };
+
   return (
-    <Button className={className} variant="outline" onClick={handleSignOut}>
+    <Button
+      className={className}
+      onClick={handleLogout}
+    >
       Log Out
     </Button>
   );

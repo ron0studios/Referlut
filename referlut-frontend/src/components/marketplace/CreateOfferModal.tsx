@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
+import { setCookie, getCookie } from "../../lib/cookies";
+import { Offer } from "../../types/marketplace/marketplace";
+import { useToast } from "@/hooks/use-toast";
 
 interface CreateOfferModalProps {
   isOpen: boolean;
@@ -12,6 +15,7 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
   onClose,
   activeTab,
 }) => {
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     brand: "",
     title: "",
@@ -34,9 +38,61 @@ const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this would submit the data to an API
-    console.log({ ...formData, type: activeTab });
+
+    // Create new offer object
+    const newOffer: Offer = {
+      id: `user-${Date.now()}`, // Generate a unique ID
+      brand: formData.brand,
+      type: activeTab,
+      title: formData.title,
+      description: formData.description,
+      used: 0,
+      total: formData.total,
+      price: formData.price,
+      logo: "https://images.pexels.com/photos/4968630/pexels-photo-4968630.jpeg", // Default logo
+      createdAt: new Date(),
+    };
+
+    // Get existing user offers from cookies or initialize empty array
+    const existingOffersCookie = getCookie("userOffers");
+    let existingOffers: Offer[] = [];
+
+    if (existingOffersCookie) {
+      try {
+        const parsed = JSON.parse(existingOffersCookie);
+        // Make sure dates are properly converted back to Date objects
+        existingOffers = parsed.map((o: any) => ({
+          ...o,
+          createdAt: new Date(o.createdAt),
+        }));
+      } catch (error) {
+        console.error("Error parsing cookie data:", error);
+      }
+    }
+
+    // Add new offer to array
+    const updatedOffers = [...existingOffers, newOffer];
+
+    // Save updated offers array to cookie
+    setCookie("userOffers", JSON.stringify(updatedOffers));
+
+    // Show success toast
+    toast({
+      title: "Offer Created!",
+      description:
+        "Your offer has been successfully created and will appear in the marketplace.",
+      variant: "default",
+    });
+
+    // Close modal and reset form
     onClose();
+    setFormData({
+      brand: "",
+      title: "",
+      description: "",
+      total: 1,
+      price: 0,
+    });
   };
 
   if (!isOpen) return null;
