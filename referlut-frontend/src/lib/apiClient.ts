@@ -1,26 +1,25 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import useSWR, { mutate } from "swr";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
+import { getAccessToken, supabase } from "@/lib/supabaseClient";
 
 // Get API base URL from environment variable
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 // Default fetcher function for SWR
-const defaultFetcher = async (
-  url: string,
-  token?: string,
-  authProvider: string = "auth0"
-) => {
+const defaultFetcher = async (url: string, token?: string) => {
+  // Automatically get the latest auth token if not provided
+  const authToken = token || (await getAccessToken());
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   };
 
-  // Add Authorization header if token is provided
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-    // Add Auth-Provider header to specify which authentication system to use
-    headers["Auth-Provider"] = authProvider;
+  // Add Authorization header if token is available
+  if (authToken) {
+    // Ensure we're using the correct Bearer format
+    headers["Authorization"] = `Bearer ${authToken}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${url}`, { headers });
@@ -30,9 +29,31 @@ const defaultFetcher = async (
     const error = new Error(
       "An error occurred while fetching the data."
     ) as ApiError;
-    const info = await response.json().catch(() => ({}));
-    error.status = response.status;
-    error.info = info;
+    try {
+      const info = await response.json();
+      error.status = response.status;
+      error.info = info;
+      console.error("API Error:", error.status, info);
+
+      // Handle authentication errors by attempting to refresh the token
+      if (
+        error.status === 401 ||
+        (error.info?.detail &&
+          error.info.detail.includes("Authentication failed"))
+      ) {
+        console.log("Authentication error detected, refreshing session...");
+        // Refresh the session
+        const { data } = await supabase.auth.refreshSession();
+        if (data.session) {
+          console.log("Session refreshed successfully");
+          // Retry the request with the new token
+          return defaultFetcher(url);
+        }
+      }
+    } catch (e) {
+      error.status = response.status;
+      error.info = { message: await response.text() };
+    }
     throw error;
   }
 
@@ -43,7 +64,6 @@ interface FetchOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   body?: any;
   headers?: Record<string, string>;
-  authProvider?: "auth0" | "supabase" | "pocketbase";
 }
 
 // Error type for API errors
@@ -59,13 +79,11 @@ export const apiClient = {
   /**
    * Make a fetch request to the API
    */
-  fetch: async (path: string, options: FetchOptions = {}, token?: string) => {
-    const {
-      method = "GET",
-      body,
-      headers = {},
-      authProvider = "auth0",
-    } = options;
+  fetch: async (path: string, options: FetchOptions = {}) => {
+    const { method = "GET", body, headers = {} } = options;
+
+    // Get the latest auth token automatically
+    const token = await getAccessToken();
 
     // Create request headers with Authorization if token is provided
     const requestHeaders: HeadersInit = {
@@ -75,7 +93,6 @@ export const apiClient = {
 
     if (token) {
       requestHeaders["Authorization"] = `Bearer ${token}`;
-      requestHeaders["Auth-Provider"] = authProvider;
     }
 
     // Prepare request options
@@ -119,29 +136,19 @@ export const apiClient = {
     /**
      * Get list of available banking institutions
      */
-    getInstitutions: async (
-      countryCode: string = "GB",
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
+    getInstitutions: async (countryCode: string = "GB") => {
       return apiClient.fetch(
-        `/api/banking/institutions?country=${countryCode}`,
-        { authProvider },
-        token
+        `/api/banking/institutions?country=${countryCode}`
       );
     },
 
     /**
      * Initiate a bank connection
      */
-    initiateConnection: async (
-      data: {
-        institution_id: string;
-        redirect_url: string;
-      },
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
+    initiateConnection: async (data: {
+      institution_id: string;
+      redirect_url: string;
+    }) => {
       // Call the API endpoint to initiate the bank connection
       return apiClient.fetch(
         `/api/banking/link/initiate?institution_id=${
@@ -149,33 +156,32 @@ export const apiClient = {
         }&redirect_url=${encodeURIComponent(data.redirect_url)}`,
         {
           method: "POST",
-          authProvider,
-        },
-        token
+        }
       );
     },
 
     /**
      * Complete the bank connection after the user has authenticated
      */
-    completeConnection: async (
-      ref: string,
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
+    completeConnection: async (ref: string) => {
       // Call the API endpoint to complete the bank connection
       return apiClient.fetch(
-        `/api/banking/link/callback?ref=${encodeURIComponent(ref)}`,
-        { authProvider },
-        token
+        `/api/banking/link/callback?ref=${encodeURIComponent(ref)}`
       );
     },
 
     /**
      * Get user's connected accounts
      */
-    getAccounts: async (token?: string, authProvider: string = "auth0") => {
-      return apiClient.fetch(`/api/banking/accounts`, { authProvider }, token);
+    getAccounts: async () => {
+      return apiClient.fetch(`/api/banking/accounts`);
+    },
+
+    /**
+     * Get user's bank connection status
+     */
+    getBankStatus: async () => {
+      return apiClient.fetch(`/api/banking/status`);
     },
 
     /**
@@ -185,9 +191,7 @@ export const apiClient = {
       accountId: string,
       params: {
         months?: number;
-      } = {},
-      token?: string,
-      authProvider: string = "auth0"
+      } = {}
     ) => {
       const searchParams = new URLSearchParams();
 
@@ -199,25 +203,27 @@ export const apiClient = {
         queryString ? `&${queryString}` : ""
       }`;
 
-      return apiClient.fetch(path, { authProvider }, token);
+      return apiClient.fetch(path);
     },
 
     /**
      * Check if a user has connected any bank accounts
      */
-    hasConnectedBank: async (
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
+    hasConnectedBank: async () => {
       try {
-        const accounts = await apiClient.banking.getAccounts(
-          token,
-          authProvider
-        );
-        return Array.isArray(accounts) && accounts.length > 0;
+        const status = await apiClient.banking.getBankStatus();
+        return status.has_connected_bank;
       } catch (error) {
-        console.error("Error checking connected banks:", error);
-        return false;
+        console.error("Error checking bank connection status:", error);
+
+        // As a fallback, try to check if there are any accounts
+        try {
+          const accounts = await apiClient.banking.getAccounts();
+          return Array.isArray(accounts) && accounts.length > 0;
+        } catch (accountError) {
+          console.error("Error checking connected banks:", accountError);
+          return false;
+        }
       }
     },
   },
@@ -229,30 +235,16 @@ export const apiClient = {
     /**
      * Get financial statistics summary for a user
      */
-    getSummary: async (
-      months = 12,
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
-      return apiClient.fetch(
-        `/api/statistics/summary?months=${months}`,
-        { authProvider },
-        token
-      );
+    getSummary: async (months = 12) => {
+      return apiClient.fetch(`/api/statistics/summary?months=${months}`);
     },
 
     /**
      * Get spending chart data for visualization
      */
-    getSpendingChart: async (
-      category = "all",
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
+    getSpendingChart: async (category = "all") => {
       return apiClient.fetch(
-        `/api/statistics/spending/chart?category=${category}`,
-        { authProvider },
-        token
+        `/api/statistics/spending/chart?category=${category}`
       );
     },
   },
@@ -264,52 +256,28 @@ export const apiClient = {
     /**
      * Get user profile
      */
-    getProfile: async (
-      userId: string,
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
-      return apiClient.fetch(`/api/users/${userId}`, { authProvider }, token);
+    getProfile: async () => {
+      return apiClient.fetch(`/api/users/profile`);
     },
 
     /**
      * Update user profile
      */
-    updateProfile: async (
-      userId: string,
-      data: any,
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
-      return apiClient.fetch(
-        `/api/users/${userId}`,
-        {
-          method: "PATCH",
-          body: data,
-          authProvider,
-        },
-        token
-      );
+    updateProfile: async (userId: string, data: any) => {
+      return apiClient.fetch(`/api/users/${userId}`, {
+        method: "PATCH",
+        body: data,
+      });
     },
 
     /**
-     * Update bank connection status
+     * Update bank connection status manually
      */
-    updateBankConnectionStatus: async (
-      userId: string,
-      hasConnected: boolean,
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
-      return apiClient.fetch(
-        `/api/users/${userId}/bank-connection`,
-        {
-          method: "PATCH",
-          body: { has_connected_bank: hasConnected },
-          authProvider,
-        },
-        token
-      );
+    updateBankStatus: async (hasConnected: boolean) => {
+      return apiClient.fetch(`/api/users/update-bank-status`, {
+        method: "PATCH",
+        body: { has_connected_bank: hasConnected },
+      });
     },
   },
 
@@ -320,36 +288,25 @@ export const apiClient = {
     /**
      * Get AI-powered financial insights for a user
      */
-    getInsights: async (token?: string, authProvider: string = "auth0") => {
-      return apiClient.fetch(
-        `/api/ai/insights`,
-        {
-          method: "POST",
-          authProvider,
-        },
-        token
-      );
+    getInsights: async () => {
+      return apiClient.fetch(`/api/ai/insights`, {
+        method: "POST",
+      });
     },
 
     /**
      * Get expert tips based on spending patterns
      */
-    getExpertTips: async (token?: string, authProvider: string = "auth0") => {
-      return apiClient.fetch(`/api/ai/expert-tips`, { authProvider }, token);
+    getExpertTips: async () => {
+      return apiClient.fetch(`/api/ai/expert-tips`);
     },
 
     /**
      * Get deals and savings for a specific category
      */
-    getDeals: async (
-      category: string,
-      token?: string,
-      authProvider: string = "auth0"
-    ) => {
+    getDeals: async (category: string) => {
       return apiClient.fetch(
-        `/api/ai/deals?category=${encodeURIComponent(category)}`,
-        { authProvider },
-        token
+        `/api/ai/deals?category=${encodeURIComponent(category)}`
       );
     },
   },
@@ -365,11 +322,9 @@ export function useApi<T = any>(
     revalidateOnReconnect?: boolean;
     refreshInterval?: number;
     shouldRetryOnError?: boolean;
-    authProvider?: "auth0" | "supabase" | "pocketbase";
   } = {}
 ) {
-  const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
-  const authProvider = options.authProvider || "auth0";
+  const { isAuthenticated, isLoading } = useSupabaseAuth();
 
   // Set default SWR options
   const swrOptions = {
@@ -381,19 +336,9 @@ export function useApi<T = any>(
 
   // Define the fetcher function that includes the auth token
   const fetcherWithAuth = async (url: string) => {
-    // If user is authenticated, get token and include it in the request
-    if (isAuthenticated && !isLoading) {
-      try {
-        const token = await getAccessTokenSilently();
-        return defaultFetcher(url, token, authProvider);
-      } catch (error) {
-        console.error("Error getting access token:", error);
-        throw error;
-      }
-    }
-
-    // If not authenticated, make request without token
-    return defaultFetcher(url);
+    // Always get the latest token when making requests
+    const token = await getAccessToken();
+    return defaultFetcher(url, token);
   };
 
   // Use SWR hook with our custom fetcher
@@ -423,7 +368,7 @@ export function useApi<T = any>(
  * Invalidate cached data for a specific path
  */
 export function invalidateCache(path: string) {
-  return mutate(path);
+  mutate(path);
 }
 
 export default useApi;

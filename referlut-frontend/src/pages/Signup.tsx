@@ -1,26 +1,138 @@
-import React, { useEffect } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import React, { useEffect, useState, useCallback } from "react";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
 import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
-import LoginButton from "@/components/auth/LoginButton";
 import SignupButton from "@/components/auth/SignupButton";
+import LoginButton from "@/components/auth/LoginButton";
+import { supabase } from "@/lib/supabaseClient";
+import { apiClient } from "@/lib/apiClient";
+import BankSelection from "./BankSelection";
 
 const Signup = () => {
-  const { isAuthenticated, isLoading } = useAuth0();
+  const { isAuthenticated, isLoading } = useSupabaseAuth();
   const navigate = useNavigate();
+  const [showBankSelection, setShowBankSelection] = useState(false);
+  const [checkingBankStatus, setCheckingBankStatus] = useState(false);
+
+  const handleAuthenticatedUser = useCallback(
+    async (session: any) => {
+      try {
+        const user = session.user;
+
+        // Check if user exists in Supabase users table
+        const { data: userData, error } = await supabase
+          .from("users")
+          .select("has_connected_bank")
+          .eq("auth_id", user.id)
+          .single();
+
+        if (error && error.code !== "PGRST116") {
+          console.error("Error checking user status:", error);
+          navigate("/profile");
+          return;
+        }
+
+        // If user doesn't exist in users table yet, create them
+        if (!userData) {
+          const { error: insertError } = await supabase.from("users").insert([
+            {
+              auth_id: user.id,
+              email: user.email,
+              name: user.email?.split("@")[0] || "User",
+              has_connected_bank: false,
+            },
+          ]);
+
+          if (insertError) {
+            console.error("Error creating user:", insertError);
+          }
+
+          // Show the BankSelection component
+          setShowBankSelection(true);
+          return;
+        }
+
+        // Check if they have connected bank accounts via the API
+        try {
+          const hasBankConnected = await apiClient.banking.hasConnectedBank();
+
+          if (hasBankConnected) {
+            // User has connected banks, redirect to dashboard
+            navigate("/dashboard");
+          } else if (userData.has_connected_bank) {
+            // User has marked as connected in Supabase but no actual accounts found
+            // Update Supabase to reflect reality
+            await supabase
+              .from("users")
+              .update({ has_connected_bank: false })
+              .eq("auth_id", user.id);
+
+            // Show the BankSelection component
+            setShowBankSelection(true);
+          } else {
+            // User hasn't connected bank, show BankSelection
+            setShowBankSelection(true);
+          }
+        } catch (apiError) {
+          console.error("Error checking bank connection via API:", apiError);
+
+          // If API call fails, use the Supabase data as fallback
+          if (userData.has_connected_bank) {
+            navigate("/dashboard");
+          } else {
+            setShowBankSelection(true);
+          }
+        }
+      } catch (e) {
+        console.error("Error in handleAuthenticatedUser:", e);
+        navigate("/profile");
+      }
+    },
+    [navigate]
+  );
 
   useEffect(() => {
-    // If user is already authenticated, redirect to profile
-    if (isAuthenticated) {
-      navigate("/profile");
-    }
-  }, [isAuthenticated, navigate]);
+    const checkAuthStatus = async () => {
+      if (isAuthenticated) {
+        setCheckingBankStatus(true);
+        try {
+          // Get current user from Supabase
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
 
-  if (isLoading) {
+          if (session) {
+            await handleAuthenticatedUser(session);
+          }
+        } catch (err) {
+          console.error("Error checking authentication status:", err);
+          navigate("/profile");
+        } finally {
+          setCheckingBankStatus(false);
+        }
+      }
+    };
+
+    checkAuthStatus();
+  }, [isAuthenticated, navigate, handleAuthenticatedUser]);
+
+  const handleBankSelectionClose = () => {
+    setShowBankSelection(false);
+    navigate("/dashboard");
+  };
+
+  if (isLoading || checkingBankStatus) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-referlut-purple"></div>
       </div>
+    );
+  }
+
+  // Show the bank selection component when needed
+  if (showBankSelection) {
+    return (
+      <BankSelection forceOpen={true} onClose={handleBankSelectionClose} />
     );
   }
 

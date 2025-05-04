@@ -1,12 +1,13 @@
 import React from "react";
+import { useEffect, useState } from "react";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
 import SignupButton from "./auth/SignupButton";
 import LoginButton from "./auth/LoginButton";
 
 const CallToAction = () => {
-  const { isAuthenticated } = useAuth0();
+  const { isAuthenticated } = useSupabaseAuth();
 
   return (
     <section className="py-20">
@@ -44,11 +45,9 @@ const CallToAction = () => {
               ) : (
                 <div className="flex flex-col sm:flex-row gap-4">
                   <SignupButton
-                    size="lg"
                     className="bg-white text-referlut-purple hover:bg-white/90"
                   />
                   <LoginButton
-                    size="lg"
                     variant="outline"
                     className="border-white text-white hover:bg-white/10"
                   />

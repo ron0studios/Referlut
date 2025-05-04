@@ -1,5 +1,8 @@
 import os
 import logging
+import httpx
+import json
+import base64
 from fastapi import FastAPI, Depends, HTTPException, Request, Header, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -7,20 +10,20 @@ from dotenv import load_dotenv
 import datetime
 from supabase import create_client, Client
 import openai
-from typing import Optional, Dict, List, Annotated, Union
+from typing import Optional, Dict, List, Annotated, Union, Any
 import jwt
 import requests
+from datetime import datetime, timedelta
+
 from banking import (
     initiate_requisition,
     handle_requisition_callback,
     fetch_accounts,
     fetch_transactions,
+    get_institutions,
 )
 from ai import Transaction, analyze_transactions, classify_transaction_with_llm, get_expert_tips, get_spending_insights, scrape_best_deals
 from pydantic import BaseModel
-import asyncio
-from datetime import datetime, timedelta
-import json
 
 from mock_data import MOCK_TRANSACTIONS
 
@@ -36,9 +39,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Dictionary to cache transaction classifications
-transaction_classifications = {}
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
@@ -75,36 +75,50 @@ async def get_authenticated_user(
     token = auth.credentials
 
     try:
-        if SUPABASE_JWT_SECRET:
-            # Verify Supabase JWT
-            payload = jwt.decode(
-                token,
-                SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
-            )
-            # Supabase uses 'sub' claim for user ID
-            user_id = payload.get("sub")
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Invalid token")
-            return {"user_id": user_id, "provider": "supabase"}
-        else:
-            # In development mode, we can skip verification
-            try:
-                payload = jwt.decode(token, options={"verify_signature": False})
-                user_id = payload.get("sub")
-                if not user_id:
-                    raise HTTPException(status_code=401, detail="Invalid token")
-                return {"user_id": user_id, "provider": "supabase"}
-            except Exception as e:
-                logger.error(f"JWT decode error: {str(e)}")
-                raise HTTPException(status_code=401, detail="Invalid token format")
-
-    except jwt.PyJWTError as e:
-        logger.error(f"JWT decode error: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
+        # Decode and validate the token
+        payload = decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: Missing user ID")
+        return {"user_id": user_id, "provider": "supabase", "email": payload.get("email")}
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}")
         raise HTTPException(status_code=401, detail="Authentication failed")
+
+def decode_token(token: str):
+    """Decode and validate JWT token from Supabase using HMAC secret"""
+    try:
+        # Decode the token using HMAC secret
+        if not SUPABASE_JWT_SECRET:
+            logger.warning("SUPABASE_JWT_SECRET not set. Token validation is disabled!")
+            # For development, you might want to just decode without verification
+            # DO NOT DO THIS IN PRODUCTION
+            header = jwt.get_unverified_header(token)
+            payload = jwt.decode(
+                token,
+                options={"verify_signature": False}
+            )
+            return payload
+
+        # Use the JWT secret to validate the token
+        payload = jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False}  # Skip audience verification
+        )
+
+        return payload
+    except jwt.PyJWTError as e:
+        logger.error(f"JWT validation error: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+def is_development_mode():
+    """Check if we're running in development mode"""
+    return os.getenv("ENVIRONMENT", "development").lower() == "development"
 
 class InsightsRequest(BaseModel):
     prompt: str
@@ -129,6 +143,14 @@ async def bank_link_initiate(
 ):
     user_id = user_data["user_id"]
     return initiate_requisition(user_id, institution_id, redirect_url)
+
+@banking_router.get("/institutions")
+async def get_banking_institutions(
+    user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)],
+    country: str = "GB"
+):
+    """Get list of available banking institutions for a country"""
+    return get_institutions(country_code=country)
 
 @banking_router.get("/link/callback")
 async def bank_link_callback(ref: str):
@@ -292,6 +314,33 @@ async def update_bank_status(
         logger.error(f"Error updating bank status: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@users_router.patch("/{userId}")
+async def update_user_profile(
+    user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)],
+    userId: str,
+    profile_data: Dict[str, Any]
+):
+    """
+    Update a user's profile information
+    """
+    # Verify the user is updating their own profile
+    if user_data["user_id"] != userId:
+        raise HTTPException(status_code=403, detail="You can only update your own profile")
+
+    try:
+        # Update user data in Supabase
+        response = supabase.table("users").update(profile_data).eq("auth_id", userId).execute()
+
+        if not response.data or len(response.data) == 0:
+            # User doesn't exist in our database yet, create them
+            profile_data["auth_id"] = userId
+            response = supabase.table("users").insert(profile_data).execute()
+
+        return {"success": True, "profile": response.data[0]}
+    except Exception as e:
+        logger.error(f"Error updating user profile: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 # Statistics endpoints
 @statistics_router.get("/summary")
 async def get_statistics_summary(
@@ -410,6 +459,9 @@ async def get_spending_chart(
     """
     user_id = user_data["user_id"]
     try:
+        # Initialize transaction classifications dictionary
+        transaction_classifications = {}
+
         # Get user transactions from all their accounts
         transactions = []
 

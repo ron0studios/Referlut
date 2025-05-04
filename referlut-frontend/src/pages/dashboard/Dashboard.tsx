@@ -6,14 +6,14 @@ import { FinancialChart } from "@/components/dashboard/FinancialChart";
 import { ExpertTips } from "@/components/dashboard/ExpertTips";
 import { MessagesPreview } from "@/components/dashboard/MessagesPreview";
 import { Link } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react"; // Import Auth0 hook directly
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth"; // Import Supabase hook instead
 
 const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const { user, isLoading } = useAuth0(); // Use Auth0's hook to get user data
+  const { user, isLoading } = useSupabaseAuth(); // Use Supabase's hook to get user data
 
   // Get the user's name, with fallbacks
-  const userName = user?.name || user?.nickname || "User";
+  const userName = user.user_metadata.name || user.email || "User";
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

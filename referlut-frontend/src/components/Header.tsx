@@ -1,15 +1,15 @@
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { Menu, X } from "lucide-react";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
-import { Menu } from "lucide-react";
-import { useAuth0 } from "@auth0/auth0-react";
 import LoginButton from "./auth/LoginButton";
 import LogoutButton from "./auth/LogoutButton";
 import SignupButton from "./auth/SignupButton";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { isAuthenticated, user, isLoading } = useAuth0();
+  const { isAuthenticated, user, isLoading } = useSupabaseAuth();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b">
@@ -64,7 +64,7 @@ const Header = () => {
                   variant="outline"
                   className="border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
                 >
-                  {user?.name || "Profile"}
+                  {user?.user_metadata?.name || user?.email || "Profile"}
                 </Button>
               </Link>
               <Link

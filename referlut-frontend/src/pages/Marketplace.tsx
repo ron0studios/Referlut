@@ -1,6 +1,6 @@
 // src/pages/Marketplace.tsx
 import React, { useState, useEffect } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
 import Header from "@/components/Header"; // Using main application header
 import Navigation from "@/components/marketplace/Navigation";
 import BrandFilter from "@/components/marketplace/BrandFilter";
@@ -23,7 +23,7 @@ import {
 import { Offer } from "@/types/marketplace/marketplace";
 
 function Marketplace() {
-  const { user, isAuthenticated, isLoading } = useAuth0();
+  const { user, isAuthenticated, isLoading } = useSupabaseAuth();
   const [activeTab, setActiveTab] = useState<
     "referral" | "loyalty" | "charity"
   >("referral");
@@ -73,7 +73,7 @@ function Marketplace() {
     if (offers.length > 0 && activeTab === "referral") {
       // Check if any offers are still loading content
       const hasLoadingContent = offers.some(
-        (offer) => offer.isTitleLoading || offer.isTotalLoading,
+        (offer) => offer.isTitleLoading || offer.isTotalLoading
       );
 
       if (hasLoadingContent) {
@@ -175,7 +175,14 @@ function Marketplace() {
         </div>
       </main>
 
-      <MessagesPanel user={user} />
+      <MessagesPanel
+        user={user ? {
+          ...user,
+          name: user.email || 'Anonymous',
+          avatar: user.user_metadata?.avatar_url || '/default-avatar.png',
+          unreadMessages: 0
+        } : null}
+      />
 
       <CreateOfferModal
         isOpen={isCreateModalOpen}

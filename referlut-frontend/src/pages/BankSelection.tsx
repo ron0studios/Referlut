@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
 import {
   Dialog,
   DialogContent,
@@ -20,65 +19,95 @@ interface Bank {
   logo: string;
 }
 
-export default function BankSelection() {
-  const [isOpen, setIsOpen] = useState(false);
+interface BankSelectionProps {
+  // Allow forcing the dialog open from parent components
+  forceOpen?: boolean;
+  // Allow parent components to be notified when the dialog is closed
+  onClose?: () => void;
+}
+
+export default function BankSelection({
+  forceOpen = false,
+  onClose,
+}: BankSelectionProps) {
+  const [isOpen, setIsOpen] = useState(forceOpen);
   const [selectedBank, setSelectedBank] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user, isLoading: isAuthLoading, isAuthenticated } = useAuth0();
   const navigate = useNavigate();
+
+  // Update isOpen if forceOpen changes
+  useEffect(() => {
+    setIsOpen(forceOpen);
+  }, [forceOpen]);
 
   // Check if user has already connected a bank account
   useEffect(() => {
     const checkUserOnboarding = async () => {
-      if (!isAuthLoading && isAuthenticated && user) {
-        try {
-          // Check if the user has already connected a bank account
-          const { data, error } = await supabase
-            .from("users")
-            .select("has_connected_bank")
-            .eq("auth0_id", user.sub)
-            .single();
+      try {
+        // Get current user from Supabase
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-          if (error) {
-            console.error("Error checking user status:", error);
+        if (!session) {
+          // No authenticated user, redirect to login
+          navigate("/login");
+          return;
+        }
+
+        const userId = session.user.id;
+
+        // Check if the user has already connected a bank account
+        const { data, error } = await supabase
+          .from("users")
+          .select("has_connected_bank")
+          .eq("auth_id", userId)
+          .single();
+
+        if (error && error.code !== "PGRST116") {
+          console.error("Error checking user status:", error);
+          return;
+        }
+
+        // If user exists but hasn't connected a bank, show the modal
+        if (data && !data.has_connected_bank) {
+          setIsOpen(true);
+        } else if (!data) {
+          // If user doesn't exist in our database yet, create them
+          const { error: insertError } = await supabase.from("users").insert([
+            {
+              auth_id: userId,
+              email: session.user.email,
+              name: session.user.email?.split("@")[0] || "User",
+              has_connected_bank: false,
+            },
+          ]);
+
+          if (insertError) {
+            console.error("Error creating user:", insertError);
             return;
           }
 
-          // If user exists but hasn't connected a bank, show the modal
-          if (data && !data.has_connected_bank) {
-            setIsOpen(true);
-          } else if (!data) {
-            // If user doesn't exist in our database yet, create them
-            const { error: insertError } = await supabase.from("users").insert([
-              {
-                auth0_id: user.sub,
-                email: user.email,
-                name: user.name,
-                has_connected_bank: false,
-              },
-            ]);
-
-            if (insertError) {
-              console.error("Error creating user:", insertError);
-              return;
-            }
-
-            setIsOpen(true);
-          } else {
-            // User already has a connected bank, redirect to dashboard
+          setIsOpen(true);
+        } else {
+          // User already has a connected bank, redirect to dashboard if we're on the bank selection page
+          if (window.location.pathname === "/bank-selection") {
             navigate("/dashboard");
           }
-        } catch (err) {
-          console.error("Error in checkUserOnboarding:", err);
         }
+      } catch (err) {
+        console.error("Error in checkUserOnboarding:", err);
       }
     };
 
-    checkUserOnboarding();
-  }, [isAuthLoading, isAuthenticated, user, navigate]);
+    // Only run this check if we're not being forced open
+    if (!forceOpen) {
+      checkUserOnboarding();
+    }
+  }, [navigate, forceOpen]);
 
   // Fetch available banks when the modal is opened
   useEffect(() => {
@@ -118,7 +147,7 @@ export default function BankSelection() {
   };
 
   const handleConnectBank = async () => {
-    if (!selectedBank || !user) return;
+    if (!selectedBank) return;
 
     setIsConnecting(true);
 
@@ -129,7 +158,6 @@ export default function BankSelection() {
       // Call API to initiate bank connection
       const response = await apiClient.banking.initiateConnection({
         institution_id: selectedBank,
-        user_id: user.sub as string,
         redirect_url: redirectUrl,
       });
 
@@ -156,19 +184,27 @@ export default function BankSelection() {
   const handleSkip = async () => {
     // We'll update the database to mark that the user has seen this step
     // even if they chose to skip it
-    if (user) {
-      await supabase
-        .from("users")
-        .update({ has_connected_bank: true })
-        .eq("auth0_id", user.sub);
-    }
+    await supabase.from("users").update({ has_connected_bank: true });
 
     setIsOpen(false);
-    navigate("/dashboard");
+
+    // Call onClose if provided
+    if (onClose) {
+      onClose();
+    } else {
+      navigate("/dashboard");
+    }
+  };
+
+  const handleDialogChange = (open: boolean) => {
+    setIsOpen(open);
+    if (!open && onClose) {
+      onClose();
+    }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={handleDialogChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Connect Your Bank Account</DialogTitle>

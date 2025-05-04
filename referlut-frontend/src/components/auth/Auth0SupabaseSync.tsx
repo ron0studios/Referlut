@@ -1,152 +1,78 @@
 import { useEffect } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
-import { supabase } from "@/lib/supabaseClient";
-import { pocketbase } from "@/lib/pocketbaseClient";
-import { useNavigate } from "react-router-dom";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
+import {
+  supabase,
+  getUserProfile,
+  createUserProfile,
+  updateUserProfile,
+} from "@/lib/supabaseClient";
 
 /**
- * This component synchronizes Auth0 user data with Supabase and Pocketbase
- * It should be used near the root of your application to ensure
- * the user's data is properly synced after authentication
+ * This component syncs Supabase user data with your database
+ * It should be rendered once at the app root level
  */
-export default function Auth0SupabaseSync() {
-  const { user, isAuthenticated, isLoading, getAccessTokenSilently } =
-    useAuth0();
-  const navigate = useNavigate();
+export function Auth0SupabaseSync() {
+  // Get authentication state from Supabase
+  const { user, isAuthenticated, isLoading } = useSupabaseAuth();
 
   useEffect(() => {
-    // Skip if Auth0 is still loading or user is not authenticated
-    if (isLoading || !isAuthenticated || !user) return;
+    // Create or update user in database when authenticated
+    async function syncUserData() {
+      if (isLoading || !isAuthenticated || !user) return;
 
-    // Function to sync Auth0 user with other auth systems
-    const syncUserWithAuthSystems = async () => {
       try {
-        // Get Auth0 token to use for other auth systems
-        const token = await getAccessTokenSilently();
+        // Check if user exists in the profiles table
+        const { data: existingUser, error: fetchError } = await getUserProfile(
+          user.id
+        );
 
-        // 1. Sync with Supabase
-        await syncWithSupabase(token);
-
-        // 2. Sync with Pocketbase
-        await syncWithPocketbase(token);
-
-        // 3. Check if user needs to connect a bank
-        await checkBankConnection();
-      } catch (error) {
-        console.error("Error in Auth0 sync:", error);
-      }
-    };
-
-    // Function to sync with Supabase
-    const syncWithSupabase = async (token: string) => {
-      try {
-        // Set Supabase auth session with the Auth0 token
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: token,
-          refresh_token: token, // Using the same token as refresh for simplicity
-        });
-
-        if (sessionError) {
-          console.error("Error setting Supabase session:", sessionError);
-          return;
-        }
-
-        // Check if user exists in Supabase users table
-        const { data: existingUser, error: queryError } = await supabase
-          .from("users")
-          .select("id, has_connected_bank")
-          .eq("auth0_id", user.sub)
-          .single();
-
-        if (queryError && queryError.code !== "PGRST116") {
-          // PGRST116 is "not found"
-          console.error(
-            "Error checking if user exists in Supabase:",
-            queryError
-          );
+        if (fetchError && fetchError.code !== "PGRST116") {
+          // PGRST116 is the "no rows returned" error, any other error should be logged
+          console.error("Error checking for existing user:", fetchError);
           return;
         }
 
         if (!existingUser) {
-          // User doesn't exist in our database, create them
-          const { error: insertError } = await supabase.from("users").insert([
-            {
-              auth0_id: user.sub,
-              email: user.email,
-              name: user.name,
-              avatar_url: user.picture,
-              has_connected_bank: false,
-            },
-          ]);
+          // Create new user profile if they don't exist
+          const { error: insertError } = await createUserProfile(user.id, {
+            email: user.email,
+            name:
+              user.user_metadata?.full_name || user.email?.split("@")[0] || "",
+            avatar_url: user.user_metadata?.avatar_url || "",
+          });
 
           if (insertError) {
-            console.error("Error creating user in Supabase:", insertError);
-            return;
+            console.error("Error creating new user profile:", insertError);
+          } else {
+            console.log("Created new user profile");
           }
+        } else {
+          // Update existing user's profile data
+          const { error: updateError } = await updateUserProfile(user.id, {
+            last_login: new Date().toISOString(),
+            email: user.email || existingUser.email,
+            // Only update these fields if they exist in user metadata
+            ...(user.user_metadata?.full_name && {
+              name: user.user_metadata.full_name,
+            }),
+            ...(user.user_metadata?.avatar_url && {
+              avatar_url: user.user_metadata.avatar_url,
+            }),
+          });
 
-          console.log("User created in Supabase successfully");
+          if (updateError) {
+            console.error("Error updating user profile:", updateError);
+          } else {
+            console.log("Updated existing user profile");
+          }
         }
       } catch (error) {
-        console.error("Error syncing with Supabase:", error);
+        console.error("Error syncing user data:", error);
       }
-    };
+    }
 
-    // Function to sync with Pocketbase
-    const syncWithPocketbase = async (token: string) => {
-      try {
-        if (!pocketbase) {
-          console.warn("Pocketbase client not initialized");
-          return;
-        }
-
-        try {
-          // Try to authenticate with the token
-          await pocketbase
-            .collection("users")
-            .authWithOAuth2Code("auth0", token, token, null, {
-              // Create the user if they don't exist
-              createData: {
-                email: user.email,
-                name: user.name,
-                avatar: user.picture,
-                emailVisibility: true,
-              },
-            });
-
-          console.log("User authenticated/created in Pocketbase successfully");
-        } catch (error) {
-          console.error("Error authenticating with Pocketbase:", error);
-        }
-      } catch (error) {
-        console.error("Error syncing with Pocketbase:", error);
-      }
-    };
-
-    // Function to check if user has connected a bank and redirect if needed
-    const checkBankConnection = async () => {
-      try {
-        // Check if user has any connected bank accounts
-        const { data: userData } = await supabase
-          .from("users")
-          .select("has_connected_bank")
-          .eq("auth0_id", user.sub)
-          .single();
-
-        if (userData && !userData.has_connected_bank) {
-          // Redirect to bank selection if user hasn't connected a bank
-          // Using a small delay to allow the database operation to complete
-          setTimeout(() => {
-            navigate("/bank-selection");
-          }, 500);
-        }
-      } catch (error) {
-        console.error("Error checking user bank connection status:", error);
-      }
-    };
-
-    // Execute the synchronization
-    syncUserWithAuthSystems();
-  }, [isLoading, isAuthenticated, user, getAccessTokenSilently, navigate]);
+    syncUserData();
+  }, [user, isAuthenticated, isLoading]);
 
   // This component doesn't render anything
   return null;

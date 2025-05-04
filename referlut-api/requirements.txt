@@ -8,6 +8,7 @@ beautifulsoup4==4.13.4
 certifi==2025.4.26
 charset-normalizer==3.4.2
 click==8.1.8
+cryptography==41.0.0
 deprecation==2.1.0
 distro==1.9.0
 fastapi==0.115.12
@@ -37,6 +38,7 @@ pytest==8.3.5
 pytest-mock==3.14.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
+python-jose==3.3.0
 realtime==2.4.3
 requests==2.32.3
 six==1.17.0

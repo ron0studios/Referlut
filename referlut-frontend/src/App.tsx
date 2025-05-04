@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Auth0Provider } from "@auth0/auth0-react";
+import { SupabaseAuthProvider } from "./components/auth/SupabaseAuth";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -14,18 +14,10 @@ import Marketplace from "./pages/Marketplace"; // Import the new Marketplace pag
 import AuthGuard from "./components/auth/AuthGuard";
 
 const queryClient = new QueryClient();
-const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN;
-const auth0ClientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
 
 const App = () => (
-  <Auth0Provider
-    domain={auth0Domain}
-    clientId={auth0ClientId}
-    authorizationParams={{
-      redirect_uri: window.location.origin,
-    }}
-  >
-    <QueryClientProvider client={queryClient}>
+  <QueryClientProvider client={queryClient}>
+    <SupabaseAuthProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -56,8 +48,8 @@ const App = () => (
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
-    </QueryClientProvider>
-  </Auth0Provider>
+    </SupabaseAuthProvider>
+  </QueryClientProvider>
 );
 
 export default App;

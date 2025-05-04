@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
 import { supabase } from "@/lib/supabaseClient";
 import { apiClient } from "@/lib/apiClient";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ export default function BankCallback() {
   const [message, setMessage] = useState<string>(
     "Processing your bank connection..."
   );
-  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth0();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useSupabaseAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -30,7 +30,7 @@ export default function BankCallback() {
       try {
         // Get the ref query parameter (which should be the user's ID)
         const params = new URLSearchParams(location.search);
-        const ref = params.get("ref") || user.sub;
+        const ref = params.get("ref") || user.id;
 
         if (!ref) {
           throw new Error("Missing required reference parameter");
@@ -44,7 +44,7 @@ export default function BankCallback() {
           await supabase
             .from("users")
             .update({ has_connected_bank: true })
-            .eq("auth0_id", user.sub);
+            .eq("auth0_id", user.id);
 
           setStatus("success");
           setMessage("Your bank account has been successfully connected!");

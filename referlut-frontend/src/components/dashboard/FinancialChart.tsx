@@ -1,6 +1,8 @@
 import { TrendingUp } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, Tooltip } from "recharts";
 import { useEffect, useState } from "react";
+import { useSupabaseAuth } from "@/components/auth/SupabaseAuth";
+import { apiClient } from "@/lib/apiClient";
 
 import {
   Card,
@@ -93,8 +95,14 @@ const formatWeekRange = (weekStartStr: string) => {
   const start = new Date(weekStartStr);
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
-  const startStr = `${start.toLocaleString("default", { month: "short", day: "numeric" })}`;
-  const endStr = `${end.toLocaleString("default", { month: "short", day: "numeric" })}`;
+  const startStr = `${start.toLocaleString("default", {
+    month: "short",
+    day: "numeric",
+  })}`;
+  const endStr = `${end.toLocaleString("default", {
+    month: "short",
+    day: "numeric",
+  })}`;
   return `${startStr} – ${endStr}`;
 };
 
@@ -110,14 +118,28 @@ export function FinancialChart() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { session, isAuthenticated } = useSupabaseAuth();
 
   useEffect(() => {
     const fetchChartData = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://127.0.0.1:8000/api/spending/chart?category=${selectedCategory}`);
-        const data = await response.json();
-        
+
+        // Get access token if authenticated
+        let token = undefined;
+        if (isAuthenticated && session) {
+          try {
+            token = session.access_token;
+          } catch (err) {
+            console.error("Error getting access token:", err);
+          }
+        }
+
+        // Use apiClient instead of direct fetch
+        const data = await apiClient.statistics.getSpendingChart(
+          selectedCategory
+        );
+
         if (data.success) {
           setChartData(data.data);
         } else {
@@ -132,7 +154,7 @@ export function FinancialChart() {
     };
 
     fetchChartData();
-  }, [selectedCategory]);
+  }, [selectedCategory, isAuthenticated, session]);
 
   const calculateTrend = () => {
     if (chartData.length < 2) return 0;
@@ -148,7 +170,11 @@ export function FinancialChart() {
         <CardDescription>Weekly spending by category</CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="all" className="w-full px-4" onValueChange={setSelectedCategory}>
+        <Tabs
+          defaultValue="all"
+          className="w-full px-4"
+          onValueChange={setSelectedCategory}
+        >
           <TabsList className="grid grid-cols-7 mb-4">
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="groceries">Groceries</TabsTrigger>
@@ -158,7 +184,7 @@ export function FinancialChart() {
             <TabsTrigger value="shopping">Shopping</TabsTrigger>
             <TabsTrigger value="bills">Bills</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value={selectedCategory}>
             {loading ? (
               <div className="h-[200px] flex items-center justify-center">
@@ -191,8 +217,13 @@ export function FinancialChart() {
                     interval={2} // Show every 3rd week label for clarity
                   />
                   <Tooltip
-                    formatter={(value: number) => [`£${value.toFixed(2)}`, "Spending"]}
-                    labelFormatter={(label: string) => `Week: ${formatWeekRange(label)}`}
+                    formatter={(value: number) => [
+                      `£${value.toFixed(2)}`,
+                      "Spending",
+                    ]}
+                    labelFormatter={(label: string) =>
+                      `Week: ${formatWeekRange(label)}`
+                    }
                   />
                   <Line
                     dataKey="total"
@@ -210,7 +241,8 @@ export function FinancialChart() {
       </CardContent>
       <CardFooter className="flex flex-col items-start gap-2 mt-6">
         <div className="flex gap-2 font-medium leading-none text-green-600">
-          Trending {calculateTrend() > 0 ? "up" : "down"} by {Math.abs(calculateTrend()).toFixed(1)}% this week{" "}
+          Trending {calculateTrend() > 0 ? "up" : "down"} by{" "}
+          {Math.abs(calculateTrend()).toFixed(1)}% this week{" "}
           <TrendingUp className="h-4 w-4" />
         </div>
         <div className="leading-none text-muted-foreground">

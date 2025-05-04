@@ -1,14 +1,10 @@
 // In AuthGuard.tsx
-import { useAuth0 } from "@auth0/auth0-react";
+import { useSupabaseAuth } from "./SupabaseAuth";
 import { Navigate, useLocation } from "react-router-dom";
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuth0();
+  const { isAuthenticated, isLoading } = useSupabaseAuth();
   const location = useLocation();
-
-  // Add console logs to debug
-  console.log("AuthGuard - isAuthenticated:", isAuthenticated);
-  console.log("AuthGuard - isLoading:", isLoading);
 
   if (isLoading) {
     return (
@@ -19,7 +15,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!isAuthenticated) {
-    // Make sure this redirect is working correctly
+    // Redirect to login page if not authenticated
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
