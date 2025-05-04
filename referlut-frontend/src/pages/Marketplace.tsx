@@ -22,6 +22,7 @@ import {
   totalPages,
 } from "@/data/marketplaceData";
 import { Offer } from "@/types/marketplace/marketplace";
+import { useLocation } from "react-router-dom";
 
 function Marketplace() {
   const { user, isAuthenticated, isLoading } = useAuth0();
@@ -38,6 +39,7 @@ function Marketplace() {
   const [loading, setLoading] = useState(isDataLoading);
   const [page, setPage] = useState(0);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const location = useLocation();
 
   // Initial data load effect
   useEffect(() => {
@@ -172,6 +174,9 @@ function Marketplace() {
     setSelectedOffer(offer);
   };
 
+  // Use offers from navigation state if present
+  const offersToShow = location.state?.offers || offers;
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -221,7 +226,8 @@ function Marketplace() {
                 </div>
               )}
 
-              <OffersGrid offers={offers} onOfferClick={handleOfferClick} />
+
+              <OffersGrid offers={offersToShow} onOfferClick={handleOfferClick} />
 
               {/* Bottom Pagination - Already exists */}
               {activeTab === "referral" && totalPages > 1 && (
