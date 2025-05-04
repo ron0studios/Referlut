@@ -10,6 +10,7 @@ import CreateOfferModal from "@/components/marketplace/CreateOfferModal";
 import OfferDetailsModal from "@/components/marketplace/OfferDetailsModal";
 import LoadingIndicator from "@/components/marketplace/LoadingIndicator";
 import Pagination from "@/components/marketplace/Pagination";
+import { getCookie } from "@/lib/cookies"; // Add this import
 import {
   getFilteredOffers,
   getAllBrands,
@@ -29,6 +30,7 @@ function Marketplace() {
   >("referral");
   const [brandFilter, setBrandFilter] = useState<string | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [userOffers, setUserOffers] = useState<Offer[]>([]); // Add this new state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [brands, setBrands] = useState<string[]>([]);
@@ -52,43 +54,77 @@ function Marketplace() {
     loadData();
   }, []);
 
-  // Effect to handle tab changes
+  // Add this effect to load user offers from cookies
+  useEffect(() => {
+    const loadUserOffers = () => {
+      const userOffersCookie = getCookie("userOffers");
+      if (userOffersCookie) {
+        try {
+          const parsedOffers = JSON.parse(userOffersCookie);
+          // Convert date strings back to Date objects
+          const processedOffers = parsedOffers.map((offer: any) => ({
+            ...offer,
+            createdAt: new Date(offer.createdAt),
+          }));
+          setUserOffers(processedOffers);
+        } catch (error) {
+          console.error("Error parsing user offers from cookie:", error);
+        }
+      }
+    };
+
+    loadUserOffers();
+    // Also listen for storage events (in case offers are added in another tab)
+    window.addEventListener("storage", loadUserOffers);
+    return () => window.removeEventListener("storage", loadUserOffers);
+  }, []);
+
+  // Effect to handle tab changes and include user offers
   useEffect(() => {
     if (dataReady) {
-      setBrands(getAllBrands());
+      // Include brands from user offers
+      const allBrands = new Set([
+        ...getAllBrands(),
+        ...userOffers.map((offer) => offer.brand),
+      ]);
+      setBrands(Array.from(allBrands));
+
       // Reset to first page when tab changes
       setPage(0);
-      // Either use filtered offers for loyalty/charity tabs, or load page 0 for referrals
+
       if (activeTab !== "referral") {
         const filteredOffers = getFilteredOffers(activeTab, brandFilter);
-        setOffers(filteredOffers);
+        // Add user offers of the current tab type, filtered by brand if needed
+        const filteredUserOffers = userOffers.filter(
+          (offer) =>
+            offer.type === activeTab &&
+            (!brandFilter ||
+              offer.brand.toLowerCase().includes(brandFilter.toLowerCase())),
+        );
+        // Combine system and user offers
+        setOffers([...filteredOffers, ...filteredUserOffers]);
       } else {
         handlePageChange(0);
       }
     }
-  }, [activeTab, brandFilter, dataReady]);
+  }, [activeTab, brandFilter, dataReady, userOffers]);
 
+  // Effect to check for loading offers
   useEffect(() => {
-    // Only run this effect when we have offers and when in the referral tab
     if (offers.length > 0 && activeTab === "referral") {
-      // Check if any offers are still loading content
       const hasLoadingContent = offers.some(
         (offer) => offer.isTitleLoading || offer.isTotalLoading,
       );
 
       if (hasLoadingContent) {
-        // Set up an interval to periodically update the UI as content loads
         const intervalId = setInterval(() => {
-          // Create a new array reference to force a re-render
           setOffers([...offers]);
 
-          // If everything has finished loading, we can clear the interval
           if (!offers.some((o) => o.isTitleLoading || o.isTotalLoading)) {
             console.log("All content loaded!");
           }
-        }, 500); // Check every 500ms
+        }, 500);
 
-        // Clean up the interval when the component unmounts or dependencies change
         return () => {
           clearInterval(intervalId);
         };
@@ -96,12 +132,28 @@ function Marketplace() {
     }
   }, [offers, activeTab]);
 
-  // Function to handle page changes
+  // Function to handle page changes - modified to include user offers
   const handlePageChange = async (newPage: number) => {
     if (activeTab === "referral") {
       setLoading(true);
       const pageOffers = await loadPage(newPage);
-      setOffers(pageOffers);
+
+      // Apply brand filter to API-loaded offers if needed
+      const filteredPageOffers = brandFilter
+        ? pageOffers.filter((offer) =>
+            offer.brand.toLowerCase().includes(brandFilter.toLowerCase()),
+          )
+        : pageOffers;
+
+      // Add user referral offers, filtered by brand if needed
+      const userReferralOffers = userOffers.filter(
+        (offer) =>
+          offer.type === "referral" &&
+          (!brandFilter ||
+            offer.brand.toLowerCase().includes(brandFilter.toLowerCase())),
+      );
+
+      setOffers([...filteredPageOffers, ...userReferralOffers]);
       setPage(newPage);
       setLoading(false);
     }

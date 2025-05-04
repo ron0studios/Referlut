@@ -679,12 +679,24 @@ export const dataLoadingPromise = (async () => {
 })();
 
 // Function to load a specific page
-export async function loadPage(page: number): Promise<Offer[]> {
+export async function loadPage(
+  page: number,
+  brandFilter?: string | null,
+): Promise<Offer[]> {
   try {
     // Check if we already have this page cached
     if (pageCache.has(page)) {
       currentPage = page;
-      return pageCache.get(page)!;
+      let offers = pageCache.get(page)!;
+
+      // Apply brand filter if specified
+      if (brandFilter) {
+        offers = offers.filter((offer) =>
+          offer.brand.toLowerCase().includes(brandFilter.toLowerCase()),
+        );
+      }
+
+      return offers;
     }
 
     isLoadingPage = true;
@@ -703,6 +715,13 @@ export async function loadPage(page: number): Promise<Offer[]> {
     console.log(
       `Loaded page ${page + 1} of ${totalPages} (${offers.length} offers)`,
     );
+
+    // Apply brand filter if specified
+    if (brandFilter) {
+      return offers.filter((offer) =>
+        offer.brand.toLowerCase().includes(brandFilter.toLowerCase()),
+      );
+    }
 
     return offers;
   } catch (error) {
