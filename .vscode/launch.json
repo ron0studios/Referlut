@@ -6,6 +6,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
+      "cwd": "${workspaceFolder}/referlut-api",
       "args": ["main:app", "--reload", "--port", "8000"],
       "jinja": true,
       "justMyCode": false,
@@ -30,7 +31,8 @@
       "envFile": "${workspaceFolder}/referlut-api/.env",
       "presentation": {
         "hidden": true
-      }
+      },
+      "cwd": "${workspaceFolder}/referlut-api"
     },
     {
       "name": "React Vite: debug server-side",
