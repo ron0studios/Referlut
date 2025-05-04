@@ -1,12 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, CheckCircle2 } from "lucide-react";
@@ -19,18 +12,7 @@ interface Bank {
   logo: string;
 }
 
-interface BankSelectionProps {
-  // Allow forcing the dialog open from parent components
-  forceOpen?: boolean;
-  // Allow parent components to be notified when the dialog is closed
-  onClose?: () => void;
-}
-
-export default function BankSelection({
-  forceOpen = false,
-  onClose,
-}: BankSelectionProps) {
-  const [isOpen, setIsOpen] = useState(forceOpen);
+export default function BankSelection() {
   const [selectedBank, setSelectedBank] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -38,139 +20,55 @@ export default function BankSelection({
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  // Update isOpen if forceOpen changes
+  // Fetch available banks on component mount
   useEffect(() => {
-    setIsOpen(forceOpen);
-  }, [forceOpen]);
-
-  // Check if user has already connected a bank account
-  useEffect(() => {
-    const checkUserOnboarding = async () => {
+    const fetchBanks = async () => {
+      setIsLoading(true);
+      setError(null); // Clear previous errors
       try {
-        // Get current user from Supabase
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (!session) {
-          // No authenticated user, redirect to login
-          navigate("/login");
-          return;
-        }
-
-        const userId = session.user.id;
-
-        // Check if the user has already connected a bank account
-        const { data, error } = await supabase
-          .from("users")
-          .select("has_connected_bank")
-          .eq("auth_id", userId)
-          .single();
-
-        if (error && error.code !== "PGRST116") {
-          console.error("Error checking user status:", error);
-          return;
-        }
-
-        // If user exists but hasn't connected a bank, show the modal
-        if (data && !data.has_connected_bank) {
-          setIsOpen(true);
-        } else if (!data) {
-          // If user doesn't exist in our database yet, create them
-          const { error: insertError } = await supabase.from("users").insert([
-            {
-              auth_id: userId,
-              email: session.user.email,
-              name: session.user.email?.split("@")[0] || "User",
-              has_connected_bank: false,
-            },
-          ]);
-
-          if (insertError) {
-            console.error("Error creating user:", insertError);
-            return;
-          }
-
-          setIsOpen(true);
-        } else {
-          // User already has a connected bank, redirect to dashboard if we're on the bank selection page
-          if (window.location.pathname === "/bank-selection") {
-            navigate("/dashboard");
-          }
-        }
-      } catch (err) {
-        console.error("Error in checkUserOnboarding:", err);
+        const bankData = await apiClient.banking.getInstitutions("GB");
+        const formattedBanks = bankData.map((bank: any) => ({
+          id: bank.id,
+          name: bank.name,
+          logo:
+            bank.logo ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(
+              bank.name
+            )}&background=random`,
+        }));
+        setBanks(formattedBanks);
+      } catch (err: any) {
+        console.error("Error fetching banks:", err);
+        setError(err.message || "Failed to load available banks");
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    // Only run this check if we're not being forced open
-    if (!forceOpen) {
-      checkUserOnboarding();
-    }
-  }, [navigate, forceOpen]);
-
-  // Fetch available banks when the modal is opened
-  useEffect(() => {
-    if (isOpen) {
-      const fetchBanks = async () => {
-        setIsLoading(true);
-        try {
-          // Use the apiClient to fetch available banks
-          const bankData = await apiClient.banking.getInstitutions("GB");
-
-          // Transform the data to our Bank interface format
-          const formattedBanks = bankData.map((bank: any) => ({
-            id: bank.id,
-            name: bank.name,
-            logo:
-              bank.logo ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                bank.name
-              )}&background=random`,
-          }));
-
-          setBanks(formattedBanks);
-        } catch (err: any) {
-          console.error("Error fetching banks:", err);
-          setError(err.message || "Failed to load available banks");
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
-      fetchBanks();
-    }
-  }, [isOpen]);
+    fetchBanks();
+  }, []); // Run only once on mount
 
   const handleBankSelect = (bankId: string) => {
     setSelectedBank(bankId);
+    setError(null); // Clear error when a bank is selected
   };
 
   const handleConnectBank = async () => {
     if (!selectedBank) return;
 
     setIsConnecting(true);
+    setError(null); // Clear previous errors
 
     try {
-      // Generate redirect URL for the callback
       const redirectUrl = `${window.location.origin}/bank-callback`;
-
-      // Call API to initiate bank connection
       const response = await apiClient.banking.initiateConnection({
         institution_id: selectedBank,
         redirect_url: redirectUrl,
       });
 
       if (response.link) {
-        // Open the consent link in a new window
-        window.open(response.link, "_blank");
-
-        // Show a message that we're waiting for the user to complete authentication
-        // We'll keep the modal open, but update the UI to show we're waiting
-        setIsConnecting(false);
-        setError(
-          "Please complete the authentication process in the new window. This page will update once you're done."
-        );
+        // Redirect the current window to the bank's auth page
+        window.location.href = response.link;
       } else {
         throw new Error("No connection link received from the API");
       }
@@ -179,50 +77,34 @@ export default function BankSelection({
       setError(err.message || "Failed to initiate bank connection");
       setIsConnecting(false);
     }
+    // No need to set isConnecting back to false if redirecting
   };
 
-  const handleSkip = async () => {
-    // We'll update the database to mark that the user has seen this step
-    // even if they chose to skip it
-    await supabase.from("users").update({ has_connected_bank: true });
-
-    setIsOpen(false);
-
-    // Call onClose if provided
-    if (onClose) {
-      onClose();
-    } else {
-      navigate("/dashboard");
-    }
-  };
-
-  const handleDialogChange = (open: boolean) => {
-    setIsOpen(open);
-    if (!open && onClose) {
-      onClose();
-    }
-  };
-
+  // Render as a full page, not a dialog
   return (
-    <Dialog open={isOpen} onOpenChange={handleDialogChange}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle>Connect Your Bank Account</DialogTitle>
-          <DialogDescription>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-2xl w-full space-y-8 bg-white p-8 rounded-lg shadow-md">
+        {/* Header Section */}
+        <div>
+          <h2 className="text-center text-3xl font-extrabold text-gray-900">
+            Connect Your Bank Account
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
             Connect your bank account to get personalized financial insights and
             recommendations. Your data is secure and we only have read access.
-          </DialogDescription>
-        </DialogHeader>
+          </p>
+        </div>
 
+        {/* Bank Selection Section */}
         {isLoading ? (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
             <span className="ml-2">Loading available banks...</span>
           </div>
-        ) : error ? (
+        ) : error && !banks.length ? ( // Show error prominently if loading failed
           <div className="text-center p-4">
             <div className="text-red-500 mb-4">{error}</div>
-            <Button onClick={() => setError(null)} variant="outline">
+            <Button onClick={() => window.location.reload()} variant="outline">
               Try Again
             </Button>
           </div>
@@ -233,23 +115,23 @@ export default function BankSelection({
                 key={bank.id}
                 className={`cursor-pointer transition-all ${
                   selectedBank === bank.id
-                    ? "ring-2 ring-blue-500 shadow-md"
+                    ? "ring-2 ring-referlut-purple shadow-md"
                     : "hover:shadow-md"
                 }`}
                 onClick={() => handleBankSelect(bank.id)}
               >
-                <CardContent className="flex flex-col items-center justify-center p-4">
-                  <div className="relative h-12 w-12 mb-3">
+                <CardContent className="flex flex-col items-center justify-center p-4 h-full">
+                  <div className="relative h-12 w-12 mb-3 flex-shrink-0">
                     <img
                       src={bank.logo}
                       alt={bank.name}
                       className="object-contain h-full w-full"
                     />
                     {selectedBank === bank.id && (
-                      <CheckCircle2 className="absolute -top-2 -right-2 h-5 w-5 text-green-500" />
+                      <CheckCircle2 className="absolute -top-1 -right-1 h-5 w-5 text-green-500 bg-white rounded-full" />
                     )}
                   </div>
-                  <h3 className="font-medium text-center text-sm">
+                  <h3 className="font-medium text-center text-sm flex-grow flex items-center">
                     {bank.name}
                   </h3>
                 </CardContent>
@@ -258,13 +140,15 @@ export default function BankSelection({
           </div>
         )}
 
-        <div className="flex justify-between mt-4">
-          <Button variant="outline" onClick={handleSkip}>
-            Skip for now
-          </Button>
+        {/* Action Button Section */}
+        {error &&
+          banks.length > 0 && ( // Show connection error below banks if they loaded
+            <div className="text-center text-red-500 mb-4 text-sm">{error}</div>
+          )}
+        <div className="flex justify-end mt-6">
           <Button
             onClick={handleConnectBank}
-            disabled={!selectedBank || isConnecting || !!error}
+            disabled={!selectedBank || isConnecting || isLoading}
             className="bg-referlut-purple hover:bg-referlut-purple/90"
           >
             {isConnecting ? (
@@ -277,7 +161,7 @@ export default function BankSelection({
             )}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

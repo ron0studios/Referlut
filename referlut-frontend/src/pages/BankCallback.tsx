@@ -42,9 +42,9 @@ export default function BankCallback() {
         if (result.status === "success") {
           // Update the user's bank connection status in Supabase
           await supabase
-            .from("users")
+            .from("user_settings")
             .update({ has_connected_bank: true })
-            .eq("auth0_id", user.id);
+            .eq("user_id", user.id);
 
           setStatus("success");
           setMessage("Your bank account has been successfully connected!");

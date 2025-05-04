@@ -2,6 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Extract project ID to build the storage key for auth token
+const supabaseProjectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
@@ -142,13 +144,9 @@ export const createUserProfile = async (
   userId: string,
   profileData: Record<string, any>
 ) => {
-  const { error } = await supabase.from("users").upsert({
-    auth_id: userId,
-    email: profileData.email,
-    name: profileData.name || profileData.email?.split("@")[0],
+  const { error } = await supabase.from("user_settings").upsert({
+    user_id: userId,
     avatar_url: profileData.avatar_url,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
   });
 
   if (error) {
@@ -164,12 +162,11 @@ export const updateUserProfile = async (
   profileData: Record<string, any>
 ) => {
   const { data, error } = await supabase
-    .from("users")
+    .from("user_settings")
     .update({
       ...profileData,
-      updated_at: new Date().toISOString(),
     })
-    .eq("auth_id", userId);
+    .eq("user_id", userId);
 
   return { data, error };
 };
@@ -177,9 +174,9 @@ export const updateUserProfile = async (
 // Get user profile
 export const getUserProfile = async (userId: string) => {
   const { data, error } = await supabase
-    .from("users")
+    .from("user_settings")
     .select("*")
-    .eq("auth_id", userId)
+    .eq("user_id", userId)
     .single();
 
   return { data, error };
@@ -190,4 +187,12 @@ export const onAuthStateChange = (
   callback: (event: string, session: any) => void
 ) => {
   return supabase.auth.onAuthStateChange(callback);
+};
+
+// Get the JWT access token stored by Supabase in localStorage
+export const getToken = (): string | null => {
+  const storageKey = `sb-${supabaseProjectId}-auth-token`;
+  const sessionDataString = localStorage.getItem(storageKey);
+  const sessionData = sessionDataString ? JSON.parse(sessionDataString) : null;
+  return sessionData?.access_token || null;
 };

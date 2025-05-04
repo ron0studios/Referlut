@@ -13,7 +13,7 @@ const getRandomDate = (): Date => {
   const pastYear = new Date(
     now.getFullYear() - 1,
     now.getMonth(),
-    now.getDate(),
+    now.getDate()
   );
   const timestamp =
     pastYear.getTime() + Math.random() * (now.getTime() - pastYear.getTime());
@@ -701,7 +701,7 @@ export async function loadPage(page: number): Promise<Offer[]> {
     pageCache.set(page, offers);
 
     console.log(
-      `Loaded page ${page + 1} of ${totalPages} (${offers.length} offers)`,
+      `Loaded page ${page + 1} of ${totalPages} (${offers.length} offers)`
     );
 
     return offers;
@@ -758,7 +758,7 @@ async function fetchAndTransformReferralOffers(page = 0): Promise<{
     formData.append(`columns[${column.index}][searchable]`, "true");
     formData.append(
       `columns[${column.index}][orderable]`,
-      column.index === 10 ? "true" : "false",
+      column.index === 10 ? "true" : "false"
     );
     formData.append(`columns[${column.index}][search][value]`, "");
     formData.append(`columns[${column.index}][search][regex]`, "false");
@@ -781,10 +781,33 @@ async function fetchAndTransformReferralOffers(page = 0): Promise<{
         method: "POST",
         body: formData.toString(),
         mode: "cors",
-      },
+      }
     );
 
-    const result = await response.json();
+    // Get the raw text first to check for CORS error messages
+    const responseText = await response.text();
+
+    // Check if the response is the CORS Anywhere activation message
+    if (responseText.includes("See /corsdemo")) {
+      console.error(
+        "CORS Anywhere proxy requires activation. Please visit https://cors-anywhere.herokuapp.com/corsdemo and click the button to get temporary access."
+      );
+      throw new Error(
+        "CORS Anywhere proxy requires activation. Visit https://cors-anywhere.herokuapp.com/corsdemo"
+      );
+    }
+
+    // Now try to parse the text as JSON
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error(
+        "Failed to parse response as JSON:",
+        responseText.substring(0, 100) + "..."
+      );
+      throw new Error("Invalid JSON response from server");
+    }
 
     // Process the response data
     const processedData: Offer[] = [];
@@ -842,7 +865,7 @@ async function fetchAndTransformReferralOffers(page = 0): Promise<{
             openai,
             brand,
             signUpReward,
-            description,
+            description
           );
 
           // Update the offer object (which is a reference to the one in processedData)
@@ -863,7 +886,7 @@ async function fetchAndTransformReferralOffers(page = 0): Promise<{
           const total = await generateTotalWithOpenAI(
             openai,
             instructions,
-            description,
+            description
           );
 
           // Update the offer object
@@ -1026,21 +1049,21 @@ Only respond with a number (no text).`;
 // Fallback function for generating totals without OpenAI
 function generateFallbackTotal(instructions, description) {
   const instructionsMatch = instructions.match(
-    /can refer (\d+)|limited to (\d+)|up to (\d+) friends/i,
+    /can refer (\d+)|limited to (\d+)|up to (\d+) friends/i
   );
   const descriptionMatch = description.match(
-    /refer (\d+)|limited to (\d+)|up to (\d+) friends/i,
+    /refer (\d+)|limited to (\d+)|up to (\d+) friends/i
   );
 
   if (instructionsMatch) {
     return parseInt(
       instructionsMatch[1] || instructionsMatch[2] || instructionsMatch[3],
-      5,
+      5
     );
   } else if (descriptionMatch) {
     return parseInt(
       descriptionMatch[1] || descriptionMatch[2] || descriptionMatch[3],
-      5,
+      5
     );
   } else {
     // Random reasonable number if no specific limit found
@@ -1084,13 +1107,13 @@ export const getOffersForType = (type: "referral" | "loyalty" | "charity") => {
 
 export const getFilteredOffers = (
   type: "referral" | "loyalty" | "charity",
-  brandFilter: string | null,
+  brandFilter: string | null
 ) => {
   let filteredOffers = mockOffers.filter((offer) => offer.type === type);
 
   if (brandFilter) {
     filteredOffers = filteredOffers.filter((offer) =>
-      offer.brand.toLowerCase().includes(brandFilter.toLowerCase()),
+      offer.brand.toLowerCase().includes(brandFilter.toLowerCase())
     );
   }
 

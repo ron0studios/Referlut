@@ -10,11 +10,19 @@ import SignupButton from "./auth/SignupButton";
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { isAuthenticated, user, isLoading } = useSupabaseAuth();
+  const location = useLocation();
+  const isIndexPage = location.pathname === "/";
+
+  const getLinkClass = (path: string) => {
+    return location.pathname === path
+      ? "text-referlut-purple font-semibold"
+      : "text-gray-700 hover:text-referlut-purple transition";
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-2">
+        <Link to="/" className="flex items-center space-x-2">
           <img
             src="/referlut.png"
             alt="Referlut Logo"
@@ -23,34 +31,45 @@ const Header = () => {
           <span className="text-xl font-bold bg-gradient-to-r from-referlut-purple to-referlut-orange bg-clip-text text-transparent">
             Referlut
           </span>
-        </div>
+        </Link>
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-8">
-          <Link
-            to="/"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            Home
-          </Link>
-          <a
-            href="#features"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            Features
-          </a>
-          <a
-            href="#how-it-works"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            How It Works
-          </a>
-          <a
-            href="#testimonials"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            Testimonials
-          </a>
+          {isIndexPage && (
+            <>
+              <Link to="/" className={getLinkClass("/")}>
+                Home
+              </Link>
+              <a
+                href="#features"
+                className="text-gray-700 hover:text-referlut-purple transition"
+              >
+                Features
+              </a>
+              <a
+                href="#how-it-works"
+                className="text-gray-700 hover:text-referlut-purple transition"
+              >
+                How It Works
+              </a>
+              <a
+                href="#testimonials"
+                className="text-gray-700 hover:text-referlut-purple transition"
+              >
+                Testimonials
+              </a>
+            </>
+          )}
+          {isAuthenticated && !isIndexPage && (
+            <>
+              <Link to="/dashboard" className={getLinkClass("/dashboard")}>
+                Dashboard
+              </Link>
+              <Link to="/marketplace" className={getLinkClass("/marketplace")}>
+                Marketplace
+              </Link>
+            </>
+          )}
         </nav>
 
         {/* Login/Signup/Profile Buttons */}
@@ -59,32 +78,8 @@ const Header = () => {
             <div className="h-8 w-20 bg-gray-200 animate-pulse rounded-md"></div>
           ) : isAuthenticated ? (
             <>
-              <Link to="/profile">
-                <Button
-                  variant="outline"
-                  className="border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
-                >
-                  {user?.user_metadata?.name || user?.email || "Profile"}
-                </Button>
-              </Link>
-              <Link
-                to="/marketplace"
-                className="text-gray-700 hover:text-referlut-purple transition"
-              >
-                <Button
-                  variant="outline"
-                  className="border-referlut-orange text-referlut-orange hover:bg-referlut-orange/10"
-                >
-                  Marketplace
-                </Button>
-              </Link>
-              <Link to="/dashboard">
-                <Button
-                  variant="outline"
-                  className="border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
-                >
-                  Dashboard
-                </Button>
+              <Link to="/profile" className={getLinkClass("/profile")}>
+                {user?.user_metadata?.display_name || user?.email || "Profile"}
               </Link>
               <LogoutButton className="bg-referlut-orange hover:bg-referlut-orange/90 text-white" />
             </>
@@ -104,7 +99,7 @@ const Header = () => {
           className="md:hidden text-gray-700"
           onClick={() => setIsMenuOpen(!isMenuOpen)}
         >
-          <Menu />
+          {isMenuOpen ? <X /> : <Menu />}
         </button>
       </div>
 
@@ -112,52 +107,117 @@ const Header = () => {
       {isMenuOpen && (
         <div className="md:hidden bg-white border-t py-4">
           <div className="container mx-auto px-4 flex flex-col space-y-4">
-            <Link
-              to="/"
-              className="text-gray-700 hover:text-referlut-purple transition py-2"
-            >
-              Home
-            </Link>
-            <Link
-              to="#features"
-              className="text-gray-700 hover:text-referlut-purple transition py-2"
-            >
-              Features
-            </Link>
-            <Link
-              to="#how-it-works"
-              className="text-gray-700 hover:text-referlut-purple transition py-2"
-            >
-              How It Works
-            </Link>
-            <Link
-              to="#testimonials"
-              className="text-gray-700 hover:text-referlut-purple transition py-2"
-            >
-              Testimonials
-            </Link>
-            <div className="flex space-x-4 pt-2">
+            {isIndexPage && (
+              <>
+                <Link
+                  to="/"
+                  className="text-gray-700 hover:text-referlut-purple transition py-2"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Home
+                </Link>
+                <a
+                  href="#features"
+                  className="text-gray-700 hover:text-referlut-purple transition py-2"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Features
+                </a>
+                <a
+                  href="#how-it-works"
+                  className="text-gray-700 hover:text-referlut-purple transition py-2"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  How It Works
+                </a>
+                <a
+                  href="#testimonials"
+                  className="text-gray-700 hover:text-referlut-purple transition py-2"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Testimonials
+                </a>
+              </>
+            )}
+            <div className="flex flex-col space-y-4 pt-2">
               {isLoading ? (
                 <div className="h-10 w-full bg-gray-200 animate-pulse rounded-md"></div>
               ) : isAuthenticated ? (
                 <>
-                  <Link to="/profile" className="flex-1">
+                  <Link
+                    to="/profile"
+                    className="w-full"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
                     <Button
-                      variant="outline"
-                      className="border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10 w-full"
+                      variant={
+                        location.pathname === "/profile" ? "default" : "outline"
+                      }
+                      className={`${
+                        location.pathname === "/profile"
+                          ? "bg-referlut-purple text-white"
+                          : "border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
+                      } w-full`}
                     >
                       Profile
                     </Button>
                   </Link>
-                  <LogoutButton className="flex-1 w-full bg-referlut-orange hover:bg-referlut-orange/90 text-white" />
+                  <Link
+                    to="/dashboard"
+                    className="w-full"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    <Button
+                      variant={
+                        location.pathname === "/dashboard"
+                          ? "default"
+                          : "outline"
+                      }
+                      className={`${
+                        location.pathname === "/dashboard"
+                          ? "bg-referlut-purple text-white"
+                          : "border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
+                      } w-full`}
+                    >
+                      Dashboard
+                    </Button>
+                  </Link>
+                  <Link
+                    to="/marketplace"
+                    className="w-full"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    <Button
+                      variant={
+                        location.pathname === "/marketplace"
+                          ? "default"
+                          : "outline"
+                      }
+                      className={`${
+                        location.pathname === "/marketplace"
+                          ? "bg-referlut-orange text-white"
+                          : "border-referlut-orange text-referlut-orange hover:bg-referlut-orange/10"
+                      } w-full`}
+                    >
+                      Marketplace
+                    </Button>
+                  </Link>
+                  <LogoutButton
+                    className="w-full bg-referlut-orange hover:bg-referlut-orange/90 text-white"
+                    onClick={() => setIsMenuOpen(false)}
+                  />
                 </>
               ) : (
                 <>
                   <LoginButton
-                    className="flex-1 border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10 w-full"
+                    className="w-full border-referlut-purple text-referlut-purple hover:bg-referlut-purple/10"
                     variant="outline"
+                    onClick={() => setIsMenuOpen(false)}
                   />
-                  <SignupButton className="flex-1 bg-referlut-orange hover:bg-referlut-orange/90 text-white w-full" />
+                  <SignupButton
+                    className="w-full bg-referlut-orange hover:bg-referlut-orange/90 text-white"
+                    onClick={() => setIsMenuOpen(false)}
+                  />
                 </>
               )}
             </div>

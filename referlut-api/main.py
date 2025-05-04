@@ -178,7 +178,7 @@ async def get_bank_connection_status(user_data: Annotated[Dict[str, str], Depend
     user_id = user_data["user_id"]
     try:
         # First check Supabase for current status
-        supabase_response = supabase.table("users").select("has_connected_bank").eq("auth_id", user_id).execute()
+        supabase_response = supabase.table("user_settings").select("has_connected_bank").eq("user_id", user_id).execute()
         current_supabase_status = False
 
         if supabase_response.data and len(supabase_response.data) > 0:
@@ -191,7 +191,7 @@ async def get_bank_connection_status(user_data: Annotated[Dict[str, str], Depend
         if not req_response.data or len(req_response.data) == 0:
             # If Supabase says they have a bank connected but they don't, fix that
             if current_supabase_status:
-                supabase.table("users").update({"has_connected_bank": False}).eq("auth_id", user_id).execute()
+                supabase.table("user_settings").update({"has_connected_bank": False}).eq("user_id", user_id).execute()
                 logger.info(f"Updated user {user_id} bank connection status to False (no requisitions found)")
 
             return {
@@ -214,7 +214,7 @@ async def get_bank_connection_status(user_data: Annotated[Dict[str, str], Depend
 
         # Update Supabase if the status has changed
         if has_connected_bank != current_supabase_status:
-            supabase.table("users").update({"has_connected_bank": has_connected_bank}).eq("auth_id", user_id).execute()
+            supabase.table("user_settings").update({"has_connected_bank": has_connected_bank}).eq("user_id", user_id).execute()
 
         return {
             "has_connected_bank": has_connected_bank,
@@ -267,13 +267,13 @@ async def get_user_profile(user_data: Annotated[Dict[str, str], Depends(get_auth
     """
     user_id = user_data["user_id"]
     try:
-        # Get user data from Supabase - use auth_id to match with Supabase Auth ID
-        response = supabase.table("users").select("*").eq("auth_id", user_id).execute()
+        # Get user data from Supabase - use id to match with Supabase Auth ID
+        response = supabase.table("user_settings").select("*").eq("user_id", user_id).execute()
 
         if not response.data or len(response.data) == 0:
             # User doesn't exist in our database yet
             return {
-                "auth_id": user_id,
+                "id": user_id,
                 "has_connected_bank": False,
                 "exists": False
             }
@@ -304,7 +304,7 @@ async def update_bank_status(
     user_id = user_data["user_id"]
     try:
         # Update user data in Supabase
-        response = supabase.table("users").update({"has_connected_bank": has_connected_bank}).eq("auth_id", user_id).execute()
+        response = supabase.table("user_settings").update({"has_connected_bank": has_connected_bank}).eq("user_id", user_id).execute()
 
         if not response.data or len(response.data) == 0:
             raise HTTPException(status_code=404, detail="User not found")
@@ -329,12 +329,12 @@ async def update_user_profile(
 
     try:
         # Update user data in Supabase
-        response = supabase.table("users").update(profile_data).eq("auth_id", userId).execute()
+        response = supabase.table("user_settings").update(profile_data).eq("user_id", userId).execute()
 
         if not response.data or len(response.data) == 0:
             # User doesn't exist in our database yet, create them
-            profile_data["auth_id"] = userId
-            response = supabase.table("users").insert(profile_data).execute()
+            profile_data["id"] = userId
+            response = supabase.table("user_settings").insert(profile_data).execute()
 
         return {"success": True, "profile": response.data[0]}
     except Exception as e:

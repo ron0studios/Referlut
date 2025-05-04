@@ -1,4 +1,5 @@
 import os
+from uuid import uuid4
 from nordigen import NordigenClient
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
@@ -90,18 +91,23 @@ def get_institutions(country_code: str = "GB"):
 def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
     try:
         # Create a requisition for the user to link their bank account
-        requisition = client.requisition.create_requisition(
-            redirect_uri=redirect_url,
+        ref_id = str(uuid4())
+        # Initialize bank session
+        session = client.initialize_session(
+            # institution id
             institution_id=institution_id,
-            reference_id=user_id
+            # redirect url after successful authentication
+            redirect_uri=redirect_url,
+            # additional layer of unique ID defined by you
+            reference_id=ref_id,
         )
-        consent_link = requisition["link"] # type: ignore
-        requisition_id = requisition["id"]
+        consent_link = session.link
 
         # Store the requisition details in Supabase immediately
         try:
             result = supabase.table("requisitions").insert({
-                "requisition_id": requisition_id,
+                "requisition_id": session.requisition_id,  # type: ignore
+                "ref_id": ref_id,
                 "user_id": user_id,
                 "institution_id": institution_id,
                 "created_at": datetime.now().isoformat(),
@@ -114,7 +120,7 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
             print(f"Supabase Key length: {len(SUPABASE_KEY) if SUPABASE_KEY else 0}")
             raise
 
-        return {"link": consent_link, "requisition_id": requisition_id}
+        return {"link": consent_link, "requisition_id": ref_id}
     except Exception as e:
         print(f"Error in initiate_requisition: {str(e)}")
         raise
@@ -188,17 +194,6 @@ def fetch_accounts(requisition_id: str, user_id: str):
         else:
             print(f"Cannot fetch account details for {account_id} due to rate limit")
             continue
-
-
-        # pull metadata because these fields need irt
-        ''''
-                        "iban": acct_metadata.get("iban", ""),
-                "institution_id": req["institution_id"],
-                "status": acct_metadata.get("status", ""),
-                "owner_name": acct_metadata.get("owner_name", ""),
-                "bban": acct_metadata.get("bban", ""),
-                "name": acct_metadata.get("name", ""),
-                "currency": acct_details.get("currency", ""),'''
 
         # Upsert account metadata before logging fetches to satisfy FK constraints
         rec = {
