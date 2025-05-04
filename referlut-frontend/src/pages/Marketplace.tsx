@@ -226,7 +226,6 @@ function Marketplace() {
                 </div>
               )}
 
-
               <OffersGrid offers={offersToShow} onOfferClick={handleOfferClick} />
 
               {/* Bottom Pagination - Already exists */}
