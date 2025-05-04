@@ -209,9 +209,21 @@ function Marketplace() {
                 />
               </div>
 
+              {/* Top Pagination - Added here */}
+              {activeTab === "referral" && totalPages > 1 && (
+                <div className="mb-6 flex justify-center">
+                  <Pagination
+                    currentPage={page}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    isLoading={isLoadingPage}
+                  />
+                </div>
+              )}
+
               <OffersGrid offers={offers} onOfferClick={handleOfferClick} />
 
-              {/* Only show pagination for referral tab and if there are multiple pages */}
+              {/* Bottom Pagination - Already exists */}
               {activeTab === "referral" && totalPages > 1 && (
                 <div className="mt-8 flex justify-center">
                   <Pagination
@@ -246,5 +258,4 @@ function Marketplace() {
     </div>
   );
 }
-
 export default Marketplace;
