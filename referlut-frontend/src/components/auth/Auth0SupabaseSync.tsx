@@ -24,6 +24,9 @@ export default function Auth0SupabaseSync() {
         // Get Auth0 token to use for other auth systems
         const token = await getAccessTokenSilently();
 
+        // Store token in localStorage for API requests
+        localStorage.setItem('token', token);
+
         // 1. Sync with Supabase
         await syncWithSupabase(token);
 
@@ -34,6 +37,8 @@ export default function Auth0SupabaseSync() {
         await checkBankConnection();
       } catch (error) {
         console.error("Error in Auth0 sync:", error);
+        // Clear token on error
+        localStorage.removeItem('token');
       }
     };
 
