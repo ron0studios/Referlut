@@ -6,9 +6,14 @@ import { FinancialChart } from "@/components/dashboard/FinancialChart";
 import { ExpertTips } from "@/components/dashboard/ExpertTips";
 import { MessagesPreview } from "@/components/dashboard/MessagesPreview";
 import { Link } from "react-router-dom";
+import { useAuth0 } from "@auth0/auth0-react"; // Import Auth0 hook directly
 
-const Index = () => {
+const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const { user, isLoading } = useAuth0(); // Use Auth0's hook to get user data
+
+  // Get the user's name, with fallbacks
+  const userName = user?.name || user?.nickname || "User";
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +27,9 @@ const Index = () => {
         {/* Header */}
         <header className="mb-8">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold">Hi, Jonathan</h1>
+            <h1 className="text-3xl font-bold">
+              {isLoading ? "Loading..." : `Hi, ${userName}`}
+            </h1>
             <div className="flex items-center gap-2">
               <Button variant="outline">
                 <Plus className="mr-2 h-4 w-4" />
@@ -74,4 +81,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default Dashboard;
