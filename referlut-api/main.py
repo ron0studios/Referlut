@@ -9,7 +9,6 @@ from supabase import create_client, Client
 import openai
 from typing import Optional, Dict, List, Annotated, Union
 import jwt
-from jwt import PyJWKClient
 import requests
 from banking import (
     initiate_requisition,
@@ -23,14 +22,6 @@ import asyncio
 from datetime import datetime, timedelta
 import json
 
-# Try to import PocketBase, but handle case where it's not installed
-try:
-    from pocketbase import PocketBase
-    pocketbase_available = True
-except ImportError:
-    pocketbase_available = False
-    logging.warning("PocketBase package not available. PocketBase authentication will be disabled.")
-
 from mock_data import MOCK_TRANSACTIONS
 
 # Configure logging
@@ -43,10 +34,8 @@ load_dotenv()
 # Authentication configs
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
-AUTH0_API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE")
-POCKETBASE_URL = os.getenv("POCKETBASE_URL")
 
 # Dictionary to cache transaction classifications
 transaction_classifications = {}
@@ -54,21 +43,12 @@ transaction_classifications = {}
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
 
+if not SUPABASE_JWT_SECRET:
+    logger.warning("SUPABASE_JWT_SECRET not set. JWT verification will be disabled.")
+
 # Initialize clients
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
-
-# Initialize Auth0 JWT verification
-if AUTH0_DOMAIN and AUTH0_API_AUDIENCE:
-    auth0_jwks_client = PyJWKClient(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json")
-else:
-    auth0_jwks_client = None
-    logger.warning("AUTH0_DOMAIN or AUTH0_API_AUDIENCE not set. Auth0 authentication will be disabled.")
-
-# Initialize PocketBase client if URL is set and package is available
-pocketbase_client = PocketBase(POCKETBASE_URL) if POCKETBASE_URL and pocketbase_available else None
-if not pocketbase_client:
-    logger.warning("PocketBase authentication will be disabled.")
 
 security = HTTPBearer()
 
@@ -84,65 +64,40 @@ app.add_middleware(
 
 # Authentication dependency for user identification
 async def get_authenticated_user(
-    auth: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_provider: str = Header(None, alias="Auth-Provider")
+    auth: Annotated[HTTPAuthorizationCredentials, Depends(security)]
 ) -> Dict[str, str]:
     """
-    Authenticate user and return user data based on the authentication provider
-    auth_provider can be one of: 'auth0', 'supabase', 'pocketbase'
+    Authenticate user and return user data based on Supabase JWT token
     """
     if not auth:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     token = auth.credentials
 
-    # Default to Auth0 if provider not specified
-    provider = auth_provider.lower() if auth_provider else "auth0"
-
     try:
-        if provider == "auth0" and auth0_jwks_client:
-            # Verify Auth0 JWT
-            signing_key = auth0_jwks_client.get_signing_key_from_jwt(token)
-            user_data = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["RS256"],
-                audience=AUTH0_API_AUDIENCE,
-                issuer=f"https://{AUTH0_DOMAIN}/"
-            )
-            return {"user_id": user_data.get("sub"), "provider": "auth0"}
-
-        elif provider == "supabase":
+        if SUPABASE_JWT_SECRET:
             # Verify Supabase JWT
-            try:
-                result = supabase.auth.get_user(token)
-                if result and hasattr(result, 'user') and result.user:
-                    return {"user_id": result.user.id, "provider": "supabase"}
-                else:
-                    logger.error("Supabase authentication returned invalid user data")
-                    raise HTTPException(status_code=401, detail="Invalid Supabase token")
-            except Exception as e:
-                logger.error(f"Supabase authentication error: {str(e)}")
-                raise HTTPException(status_code=401, detail="Invalid Supabase token")
-
-        elif provider == "pocketbase" and pocketbase_client:
-            # Verify PocketBase token
-            try:
-                # Manual verification since PocketBase Python SDK doesn't expose this
-                response = requests.get(
-                    f"{POCKETBASE_URL}/api/collections/users/auth-refresh",
-                    headers={"Authorization": f"Bearer {token}"}
-                )
-                if response.status_code == 200:
-                    user_data = response.json()
-                    return {"user_id": user_data.get("record", {}).get("id"), "provider": "pocketbase"}
-                else:
-                    raise HTTPException(status_code=401, detail="Invalid PocketBase token")
-            except Exception as e:
-                logger.error(f"PocketBase authentication error: {str(e)}")
-                raise HTTPException(status_code=401, detail="PocketBase authentication failed")
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+            )
+            # Supabase uses 'sub' claim for user ID
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            return {"user_id": user_id, "provider": "supabase"}
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported auth provider: {provider}")
+            # In development mode, we can skip verification
+            try:
+                payload = jwt.decode(token, options={"verify_signature": False})
+                user_id = payload.get("sub")
+                if not user_id:
+                    raise HTTPException(status_code=401, detail="Invalid token")
+                return {"user_id": user_id, "provider": "supabase"}
+            except Exception as e:
+                logger.error(f"JWT decode error: {str(e)}")
+                raise HTTPException(status_code=401, detail="Invalid token format")
 
     except jwt.PyJWTError as e:
         logger.error(f"JWT decode error: {str(e)}")
@@ -159,6 +114,7 @@ class InsightsRequest(BaseModel):
 banking_router = APIRouter(prefix="/api/banking", tags=["Banking"])
 statistics_router = APIRouter(prefix="/api/statistics", tags=["Statistics"])
 ai_router = APIRouter(prefix="/api/ai", tags=["AI"])
+users_router = APIRouter(prefix="/api/users", tags=["Users"])
 
 @app.get("/")
 async def root():
@@ -190,6 +146,61 @@ async def get_user_accounts(user_data: Annotated[Dict[str, str], Depends(get_aut
         return accounts
     except Exception as e:
         logger.error(f"Error fetching accounts: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@banking_router.get("/status")
+async def get_bank_connection_status(user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)]):
+    """
+    Check if a user has any connected bank accounts and update Supabase if needed
+    """
+    user_id = user_data["user_id"]
+    try:
+        # First check Supabase for current status
+        supabase_response = supabase.table("users").select("has_connected_bank").eq("auth_id", user_id).execute()
+        current_supabase_status = False
+
+        if supabase_response.data and len(supabase_response.data) > 0:
+            current_supabase_status = supabase_response.data[0].get("has_connected_bank", False)
+
+        # Check if the user has any linked requisitions
+        req_response = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
+
+        # User has no linked requisitions
+        if not req_response.data or len(req_response.data) == 0:
+            # If Supabase says they have a bank connected but they don't, fix that
+            if current_supabase_status:
+                supabase.table("users").update({"has_connected_bank": False}).eq("auth_id", user_id).execute()
+                logger.info(f"Updated user {user_id} bank connection status to False (no requisitions found)")
+
+            return {
+                "has_connected_bank": False,
+                "accounts_count": 0,
+                "requisitions_count": 0
+            }
+
+        # Count the bank accounts
+        accounts_count = 0
+        for r in req_response.data:
+            try:
+                accounts = fetch_accounts(r["requisition_id"], user_id)
+                accounts_count += len(accounts)
+            except Exception as e:
+                logger.error(f"Error fetching accounts for requisition {r['requisition_id']}: {str(e)}")
+
+        # User has requisitions but no accounts
+        has_connected_bank = accounts_count > 0
+
+        # Update Supabase if the status has changed
+        if has_connected_bank != current_supabase_status:
+            supabase.table("users").update({"has_connected_bank": has_connected_bank}).eq("auth_id", user_id).execute()
+
+        return {
+            "has_connected_bank": has_connected_bank,
+            "accounts_count": accounts_count,
+            "requisitions_count": len(req_response.data)
+        }
+    except Exception as e:
+        logger.error(f"Error checking bank connection status: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @banking_router.get("/transactions")
@@ -224,6 +235,61 @@ async def get_account_transactions(
         return response.data
     except Exception as e:
         logger.error(f"Error retrieving transactions: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+# User endpoints
+@users_router.get("/profile")
+async def get_user_profile(user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)]):
+    """
+    Get the user's profile information
+    """
+    user_id = user_data["user_id"]
+    try:
+        # Get user data from Supabase - use auth_id to match with Supabase Auth ID
+        response = supabase.table("users").select("*").eq("auth_id", user_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            # User doesn't exist in our database yet
+            return {
+                "auth_id": user_id,
+                "has_connected_bank": False,
+                "exists": False
+            }
+
+        user_info = response.data[0]
+
+        # Check bank connection status
+        bank_status = await get_bank_connection_status(user_data)
+
+        # Combine user profile with bank connection status
+        user_info["has_connected_bank"] = bank_status["has_connected_bank"]
+        user_info["accounts_count"] = bank_status["accounts_count"]
+        user_info["exists"] = True
+
+        return user_info
+    except Exception as e:
+        logger.error(f"Error getting user profile: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@users_router.patch("/update-bank-status")
+async def update_bank_status(
+    user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)],
+    has_connected_bank: bool
+):
+    """
+    Manually update the user's bank connection status
+    """
+    user_id = user_data["user_id"]
+    try:
+        # Update user data in Supabase
+        response = supabase.table("users").update({"has_connected_bank": has_connected_bank}).eq("auth_id", user_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {"success": True, "has_connected_bank": has_connected_bank}
+    except Exception as e:
+        logger.error(f"Error updating bank status: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 # Statistics endpoints
@@ -577,7 +643,6 @@ async def test_expert_tips():
 
     return {"tips": tips}
 
-
 @ai_router.get("/deals")
 async def get_ai_deals(
     user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)],
@@ -628,6 +693,7 @@ async def get_ai_deals(
 app.include_router(banking_router)
 app.include_router(statistics_router)
 app.include_router(ai_router)
+app.include_router(users_router)
 
 if __name__ == "__main__":
     import uvicorn
