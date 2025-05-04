@@ -1,11 +1,10 @@
 import os
 import logging
-from fastapi import FastAPI, Depends, HTTPException, Request, Header, APIRouter
+from fastapi import FastAPI, Depends, HTTPException, Request, Header, APIRouter, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 import datetime
-from supabase import create_client, Client
 import openai
 from typing import Optional, Dict, List, Annotated, Union
 import jwt
@@ -21,6 +20,7 @@ from pydantic import BaseModel
 import asyncio
 from datetime import datetime, timedelta
 import json
+from functools import lru_cache
 
 from mock_data import MOCK_TRANSACTIONS
 
@@ -31,27 +31,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Authentication configs
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Dictionary to cache transaction classifications
-transaction_classifications = {}
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
-
-if not SUPABASE_JWT_SECRET:
-    logger.warning("SUPABASE_JWT_SECRET not set. JWT verification will be disabled.")
-
-# Initialize clients
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-openai.api_key = OPENAI_API_KEY
-
-security = HTTPBearer()
-
+# Initialize FastAPI app
 app = FastAPI()
 
 app.add_middleware(
@@ -62,59 +42,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Authentication dependency for user identification
+security = HTTPBearer()
+
+# Simple authentication for development
 async def get_authenticated_user(
-    auth: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+    auth: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)] = None
 ) -> Dict[str, str]:
     """
-    Authenticate user and return user data based on Supabase JWT token
+    Simple authentication that accepts any valid token or no token for development
     """
-    if not auth:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    token = auth.credentials
-
-    try:
-        if SUPABASE_JWT_SECRET:
-            # Verify Supabase JWT
-            payload = jwt.decode(
-                token,
-                SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
-            )
-            # Supabase uses 'sub' claim for user ID
-            user_id = payload.get("sub")
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Invalid token")
-            return {"user_id": user_id, "provider": "supabase"}
-        else:
-            # In development mode, we can skip verification
-            try:
-                payload = jwt.decode(token, options={"verify_signature": False})
-                user_id = payload.get("sub")
-                if not user_id:
-                    raise HTTPException(status_code=401, detail="Invalid token")
-                return {"user_id": user_id, "provider": "supabase"}
-            except Exception as e:
-                logger.error(f"JWT decode error: {str(e)}")
-                raise HTTPException(status_code=401, detail="Invalid token format")
-
-    except jwt.PyJWTError as e:
-        logger.error(f"JWT decode error: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
-    except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
-
-class InsightsRequest(BaseModel):
-    prompt: str
+    # For development, we'll accept any token or no token
+    return {"user_id": "mock_user", "provider": "mock"}
 
 # API routers for better organization
-# Create router groups
 banking_router = APIRouter(prefix="/api/banking", tags=["Banking"])
 statistics_router = APIRouter(prefix="/api/statistics", tags=["Statistics"])
 ai_router = APIRouter(prefix="/api/ai", tags=["AI"])
 users_router = APIRouter(prefix="/api/users", tags=["Users"])
+
+# Cache for transaction classifications
+transaction_cache = {}
+
+# Simple mock offers for demonstration
+MOCK_OFFERS = [
+    {
+        "id": 1,
+        "brand": "Pret A Manger",
+        "title": "Pret Coffee Subscription",
+        "description": "Up to 5 barista-made drinks per day for a fixed monthly fee. Choose from any organic coffees, teas, hot chocolates, and more.",
+        "category": "groceries"
+    },
+    {
+        "id": 2,
+        "brand": "Virgin Atlantic",
+        "title": "Flying Club",
+        "description": "Earn miles when you fly with Virgin Atlantic and partner airlines. Redeem for flights, upgrades, and experiences.",
+        "category": "transportation"
+    },
+    {
+        "id": 3,
+        "brand": "Starbucks",
+        "title": "Starbucks Rewards",
+        "description": "Earn stars with every purchase and redeem for free drinks and food.",
+        "category": "dining_out"
+    },
+    {
+        "id": 4,
+        "brand": "Tesco",
+        "title": "Clubcard",
+        "description": "Collect points on your shopping and get discounts on future purchases.",
+        "category": "shopping"
+    },
+]
 
 @app.get("/")
 async def root():
@@ -138,12 +117,15 @@ async def bank_link_callback(ref: str):
 async def get_user_accounts(user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)]):
     user_id = user_data["user_id"]
     try:
-        # fetch all linked requisitions for user
-        resp = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
-        accounts = []
-        for r in resp.data:
-            accounts.extend(fetch_accounts(r["requisition_id"], user_id))
-        return accounts
+        # Return mock accounts
+        return [
+            {
+                "account_id": "mock_account_1",
+                "name": "Mock Current Account",
+                "balance": 1000.00,
+                "currency": "GBP"
+            }
+        ]
     except Exception as e:
         logger.error(f"Error fetching accounts: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -151,53 +133,15 @@ async def get_user_accounts(user_data: Annotated[Dict[str, str], Depends(get_aut
 @banking_router.get("/status")
 async def get_bank_connection_status(user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)]):
     """
-    Check if a user has any connected bank accounts and update Supabase if needed
+    Check if a user has any connected bank accounts
     """
     user_id = user_data["user_id"]
     try:
-        # First check Supabase for current status
-        supabase_response = supabase.table("users").select("has_connected_bank").eq("auth_id", user_id).execute()
-        current_supabase_status = False
-
-        if supabase_response.data and len(supabase_response.data) > 0:
-            current_supabase_status = supabase_response.data[0].get("has_connected_bank", False)
-
-        # Check if the user has any linked requisitions
-        req_response = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
-
-        # User has no linked requisitions
-        if not req_response.data or len(req_response.data) == 0:
-            # If Supabase says they have a bank connected but they don't, fix that
-            if current_supabase_status:
-                supabase.table("users").update({"has_connected_bank": False}).eq("auth_id", user_id).execute()
-                logger.info(f"Updated user {user_id} bank connection status to False (no requisitions found)")
-
-            return {
-                "has_connected_bank": False,
-                "accounts_count": 0,
-                "requisitions_count": 0
-            }
-
-        # Count the bank accounts
-        accounts_count = 0
-        for r in req_response.data:
-            try:
-                accounts = fetch_accounts(r["requisition_id"], user_id)
-                accounts_count += len(accounts)
-            except Exception as e:
-                logger.error(f"Error fetching accounts for requisition {r['requisition_id']}: {str(e)}")
-
-        # User has requisitions but no accounts
-        has_connected_bank = accounts_count > 0
-
-        # Update Supabase if the status has changed
-        if has_connected_bank != current_supabase_status:
-            supabase.table("users").update({"has_connected_bank": has_connected_bank}).eq("auth_id", user_id).execute()
-
+        # For mock data, always return connected
         return {
-            "has_connected_bank": has_connected_bank,
-            "accounts_count": accounts_count,
-            "requisitions_count": len(req_response.data)
+            "has_connected_bank": True,
+            "accounts_count": 1,
+            "requisitions_count": 1
         }
     except Exception as e:
         logger.error(f"Error checking bank connection status: {str(e)}")
@@ -209,30 +153,9 @@ async def get_account_transactions(
     account_id: str,
     months: int = 12
 ):
-    # Return persisted transactions from Supabase
     try:
-        # Verify the account belongs to the authenticated user
-        account_check = supabase.table("accounts").select("user_id").eq("account_id", account_id).execute()
-
-        if not account_check.data or account_check.data[0]["user_id"] != user_data["user_id"]:
-            raise HTTPException(status_code=403, detail="You don't have permission to access this account")
-
-        response = supabase.table("transactions").select("*").eq("account_id", account_id).execute()
-
-        # If no transactions found, try to fetch them
-        if not response.data:
-            # Fetch transactions for the account
-            try:
-                from banking import fetch_transactions
-                count = fetch_transactions(account_id)
-                logger.info(f"Fetched {count} transactions for account {account_id}")
-
-                # Try again to get the transactions
-                response = supabase.table("transactions").select("*").eq("account_id", account_id).execute()
-            except Exception as e:
-                logger.error(f"Error fetching transactions: {str(e)}")
-
-        return response.data
+        # Return mock transactions
+        return MOCK_TRANSACTIONS["transactions"]["booked"]
     except Exception as e:
         logger.error(f"Error retrieving transactions: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -245,28 +168,13 @@ async def get_user_profile(user_data: Annotated[Dict[str, str], Depends(get_auth
     """
     user_id = user_data["user_id"]
     try:
-        # Get user data from Supabase - use auth_id to match with Supabase Auth ID
-        response = supabase.table("users").select("*").eq("auth_id", user_id).execute()
-
-        if not response.data or len(response.data) == 0:
-            # User doesn't exist in our database yet
-            return {
-                "auth_id": user_id,
-                "has_connected_bank": False,
-                "exists": False
-            }
-
-        user_info = response.data[0]
-
-        # Check bank connection status
-        bank_status = await get_bank_connection_status(user_data)
-
-        # Combine user profile with bank connection status
-        user_info["has_connected_bank"] = bank_status["has_connected_bank"]
-        user_info["accounts_count"] = bank_status["accounts_count"]
-        user_info["exists"] = True
-
-        return user_info
+        # Return mock user profile
+        return {
+            "auth_id": user_id,
+            "has_connected_bank": True,
+            "exists": True,
+            "accounts_count": 1
+        }
     except Exception as e:
         logger.error(f"Error getting user profile: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -281,12 +189,7 @@ async def update_bank_status(
     """
     user_id = user_data["user_id"]
     try:
-        # Update user data in Supabase
-        response = supabase.table("users").update({"has_connected_bank": has_connected_bank}).eq("auth_id", user_id).execute()
-
-        if not response.data or len(response.data) == 0:
-            raise HTTPException(status_code=404, detail="User not found")
-
+        # For mock data, just return success
         return {"success": True, "has_connected_bank": has_connected_bank}
     except Exception as e:
         logger.error(f"Error updating bank status: {str(e)}")
@@ -303,20 +206,8 @@ async def get_statistics_summary(
     """
     user_id = user_data["user_id"]
     try:
-        # Get all accounts for the user
-        resp = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
-
-        if not resp.data:
-            logger.warning(f"No linked accounts found for user {user_id}")
-            raise HTTPException(status_code=404, detail="No linked accounts found. Please connect your bank account first.")
-
-        accounts = []
-        for r in resp.data:
-            accounts.extend(fetch_accounts(r["requisition_id"], user_id))
-
-        if not accounts:
-            logger.warning(f"No accounts found for user {user_id}")
-            raise HTTPException(status_code=404, detail="No accounts found")
+        # Get mock transactions
+        transactions = MOCK_TRANSACTIONS["transactions"]["booked"]
 
         # Initialize statistics
         total_spending = 0
@@ -326,66 +217,53 @@ async def get_statistics_summary(
         top_merchants = {}
         savings_opportunities = []
 
-        # Process each account
-        for account in accounts:
-            account_id = account["account_id"]
-            # Get transactions for this account
-            response = supabase.table("transactions").select("*").eq("account_id", account_id).execute()
-            transactions = response.data
+        # Process each transaction
+        for tx in transactions:
+            try:
+                # Create a Transaction object
+                transaction = Transaction(
+                    transactionId=tx["transactionId"],
+                    bookingDate=tx["bookingDate"],
+                    valueDate=tx["valueDate"],
+                    transactionAmount=tx["transactionAmount"],
+                    remittanceInformationUnstructured=tx["remittanceInformationUnstructured"],
+                    proprietaryBankTransactionCode=tx["proprietaryBankTransactionCode"],
+                    internalTransactionId=tx["internalTransactionId"]
+                )
 
-            if not transactions:
-                logger.info(f"No transactions found for account {account_id}")
-                continue
-
-            # Process each transaction
-            for tx in transactions:
-                # Use snake_case fields from upserted records
-                amount = tx.get("amount", 0)
+                # Classify the transaction
+                category = await classify_transaction_with_llm(transaction)
+                amount = float(transaction.transactionAmount["amount"])
 
                 # Parse booking_date
-                try:
-                    date = datetime.fromisoformat(tx.get("booking_date", "").replace("Z", "+00:00"))
-                    # Skip transactions older than the requested months
-                    if date < datetime.now() - timedelta(days=30*months):
-                        continue
+                date = datetime.strptime(transaction.bookingDate, "%Y-%m-%d")
+                # Skip transactions older than the requested months
+                if date < datetime.now() - timedelta(days=30*months):
+                    continue
 
-                    month_key = date.strftime("%Y-%m")
-                    merchant = tx.get("merchant_name", "Unknown")
-                    category = tx.get("category", "Uncategorized")
+                month_key = date.strftime("%Y-%m")
+                merchant = transaction.remittanceInformationUnstructured or "Unknown"
 
-                    # Update monthly spending trend
-                    monthly_spending[month_key] = monthly_spending.get(month_key, 0) + amount
+                # Update monthly spending trend
+                monthly_spending[month_key] = monthly_spending.get(month_key, 0) + amount
 
-                    # Update category spending totals
-                    category_spending[category] = category_spending.get(category, 0) + amount
+                # Update category spending totals
+                category_spending[category] = category_spending.get(category, 0) + amount
 
-                    # Tally spending per merchant
-                    top_merchants[merchant] = top_merchants.get(merchant, 0) + amount
+                # Tally spending per merchant
+                top_merchants[merchant] = top_merchants.get(merchant, 0) + amount
 
-                    # Update overall income vs spending
-                    if amount < 0:
-                        total_spending += abs(amount)
-                    else:
-                        total_income += amount
-                except Exception as e:
-                    logger.error(f"Error processing transaction: {str(e)}")
+                # Update overall income vs spending
+                if amount < 0:
+                    total_spending += abs(amount)
+                else:
+                    total_income += amount
+            except Exception as e:
+                logger.error(f"Error processing transaction: {str(e)}")
+                continue
 
         # Sort and limit top merchants
         top_merchants = dict(sorted(top_merchants.items(), key=lambda x: x[1], reverse=True)[:10])
-
-        # Store statistics in Supabase
-        stats_data = {
-            "user_id": user_id,
-            "total_spending": total_spending,
-            "total_income": total_income,
-            "category_spending": json.dumps(category_spending),
-            "monthly_spending": json.dumps(monthly_spending),
-            "top_merchants": json.dumps(top_merchants),
-            "last_updated": datetime.utcnow().isoformat()
-        }
-
-        # Upsert statistics
-        supabase.table("user_statistics").upsert(stats_data).execute()
 
         return {
             "total_spending": total_spending,
@@ -401,127 +279,98 @@ async def get_statistics_summary(
 
 @statistics_router.get("/spending/chart")
 async def get_spending_chart(
-    user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)],
-    category: str = "all"
+    category: str = "all",
+    user_data: dict = Depends(get_authenticated_user)
 ):
-    """
-    Get weekly spending data for the chart.
-    category can be: transportation, shopping, groceries, dining out, entertainment, bills, other, all
-    """
-    user_id = user_data["user_id"]
     try:
-        # Get user transactions from all their accounts
-        transactions = []
+        # Get mock transactions
+        transactions = MOCK_TRANSACTIONS["transactions"]["booked"]
 
-        # Get all accounts for the user
-        resp = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
-        account_ids = []
-
-        for r in resp.data:
-            accounts = fetch_accounts(r["requisition_id"], user_id)
-            account_ids.extend([acc["account_id"] for acc in accounts])
-
-        # Get transactions for all accounts
-        for account_id in account_ids:
-            tx_response = supabase.table("transactions").select("*").eq("account_id", account_id).execute()
-            if tx_response.data:
-                transactions.extend(tx_response.data)
-
-        # If no transactions found, return empty data
-        if not transactions:
-            logger.warning(f"No transactions found for user {user_id}")
-            return {
-                "success": True,
-                "data": []
-            }
-
-        # Convert to Transaction objects and classify them
+        # Create Transaction objects and classify them
         transaction_objects = []
         for tx in transactions:
             try:
                 # Create a Transaction object
                 transaction = Transaction(
-                    transactionId=tx.get("transaction_id", ""),
-                    bookingDate=tx.get("booking_date", ""),
-                    valueDate=tx.get("value_date", ""),
-                    transactionAmount={"amount": str(tx.get("amount", 0)), "currency": tx.get("currency", "GBP")},
-                    remittanceInformationUnstructured=tx.get("description", ""),
-                    proprietaryBankTransactionCode=tx.get("bank_transaction_code", ""),
-                    internalTransactionId=tx.get("internal_transaction_id", "")
+                    transactionId=tx["transactionId"],
+                    bookingDate=tx["bookingDate"],
+                    valueDate=tx["valueDate"],
+                    transactionAmount=tx["transactionAmount"],
+                    remittanceInformationUnstructured=tx["remittanceInformationUnstructured"],
+                    proprietaryBankTransactionCode=tx["proprietaryBankTransactionCode"],
+                    internalTransactionId=tx["internalTransactionId"]
                 )
 
-                # Only classify if we haven't seen this transaction before
-                if transaction.transactionId not in transaction_classifications:
+                # Check if we already have this transaction classified
+                cache_key = f"{transaction.transactionId}_{transaction.bookingDate}"
+                if cache_key not in transaction_cache:
+                    # Classify the transaction and cache the result
                     tx_category = await classify_transaction_with_llm(transaction)
-                    # Map backend categories to frontend categories
-                    category_mapping = {
-                        "Groceries": "groceries",
-                        "Transportation": "transportation",
-                        "Dining Out": "dining out",
-                        "Entertainment": "entertainment",
-                        "Shopping": "shopping",
-                        "Bills": "bills",
-                        "Other": "other"
-                    }
-                    transaction_classifications[transaction.transactionId] = category_mapping.get(tx_category, "other")
+                    transaction_cache[cache_key] = tx_category
 
-                # Use the existing category if classification failed or is missing
-                if transaction.transactionId not in transaction_classifications:
-                    transaction_classifications[transaction.transactionId] = tx.get("category", "other")
-
+                # Use the cached classification
+                transaction.category = transaction_cache[cache_key]
                 transaction_objects.append(transaction)
             except Exception as e:
                 logger.error(f"Error creating transaction object: {e}")
                 continue
 
-        # Process transactions to generate weekly spending data
+        # Process transactions to get weekly data
         weekly_data = {}
-
-        for transaction in transaction_objects:
+        for tx in transaction_objects:
             try:
-                # Convert booking date to datetime
-                booking_date = datetime.fromisoformat(transaction.bookingDate.replace('Z', '+00:00'))
-                # Get the start of the week (Monday)
-                week_start = booking_date - timedelta(days=booking_date.weekday())
+                # Skip if amount is not a valid number
+                amount = float(tx.transactionAmount["amount"])
+                if amount >= 0:  # Skip credits/income
+                    continue
+
+                # Get the week start date (Monday)
+                date = datetime.strptime(tx.bookingDate, "%Y-%m-%d")
+                week_start = date - timedelta(days=date.weekday())
                 week_key = week_start.strftime("%Y-%m-%d")
 
+                # Initialize week data if not exists
                 if week_key not in weekly_data:
                     weekly_data[week_key] = {
                         "total": 0,
                         "categories": {}
                     }
 
-                amount = float(transaction.transactionAmount["amount"])
-                if amount < 0:  # Only include spending (negative amounts)
-                    tx_category = transaction_classifications[transaction.transactionId]
-                    if tx_category not in ["Rewards", "Income"]:
-                        # Initialize category if not exists
-                        if tx_category not in weekly_data[week_key]["categories"]:
-                            weekly_data[week_key]["categories"][tx_category] = 0
+                # Add to total
+                weekly_data[week_key]["total"] += abs(amount)
 
-                        # Add amount to both category and total
-                        weekly_data[week_key]["categories"][tx_category] += abs(amount)
-                        weekly_data[week_key]["total"] += abs(amount)
+                # Add to category
+                if tx.category:
+                    if tx.category not in weekly_data[week_key]["categories"]:
+                        weekly_data[week_key]["categories"][tx.category] = 0
+                    weekly_data[week_key]["categories"][tx.category] += abs(amount)
+
             except Exception as e:
-                logger.error(f"Error processing transaction for chart: {str(e)}")
+                logger.error(f"Error processing transaction: {e}")
+                continue
 
-        # Convert to array format and sort by week
+        # Convert to list and sort by week
         chart_data = [
-            {"month": week, **data}  # Keep "month" key for frontend compatibility
+            {
+                "week": week,
+                "total": data["total"],
+                "categories": data["categories"]
+            }
             for week, data in sorted(weekly_data.items())
         ]
 
-        # If specific category requested, update totals
+        # Filter by category if specified
         if category != "all":
-            for week_data in chart_data:
-                # Set total to the specific category's amount
-                week_data["total"] = week_data["categories"].get(category, 0)
-                # Keep only the requested category in categories
-                week_data["categories"] = {category: week_data["total"]}
-
-        # Print debug information
-        logger.info(f"Category: {category}")
-        logger.info(f"Chart data: {json.dumps(chart_data, indent=2)}")
+            filtered_data = []
+            for item in chart_data:
+                category_amount = item["categories"].get(category, 0)
+                if category_amount > 0:  # Only include weeks with spending in this category
+                    filtered_data.append({
+                        "week": item["week"],
+                        "total": category_amount,
+                        "categories": {category: category_amount}
+                    })
+            chart_data = filtered_data
 
         return {
             "success": True,
@@ -529,50 +378,114 @@ async def get_spending_chart(
         }
 
     except Exception as e:
-        logger.error(f"Error getting spending chart data: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        logger.error(f"Error generating spending chart: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # AI endpoints
+@ai_router.get("/insights")
 @ai_router.post("/insights")
-async def get_ai_insights(
-    user_data: Annotated[Dict[str, str], Depends(get_authenticated_user)]
-):
-    user_id = user_data["user_id"]
+async def get_ai_insights():
+    print("\n" + "="*50)
+    print("STARTING AI INSIGHTS GENERATION")
+    print("="*50)
+
     try:
-        # Get user's statistics
-        stats_response = await get_statistics_summary(user_data)
+        # Get mock transactions
+        transactions = MOCK_TRANSACTIONS["transactions"]["booked"]
+        print(f"\nFound {len(transactions)} transactions to analyze")
 
-        # Construct a detailed prompt for AI analysis
-        prompt = f"""
-        Analyze the following spending data and provide personalized insights and recommendations:
+        # Convert to Transaction objects and calculate weekly averages
+        transaction_objects = []
+        weekly_totals = {}
+        category_weekly_totals = {}
 
-        Total Spending: £{stats_response['total_spending']:.2f}
-        Total Income: £{stats_response['total_income']:.2f}
+        print("\n=== Processing Transactions ===")
+        for tx in transactions:
+            try:
+                transaction = Transaction(
+                    transactionId=tx["transactionId"],
+                    bookingDate=tx["bookingDate"],
+                    valueDate=tx["valueDate"],
+                    transactionAmount=tx["transactionAmount"],
+                    remittanceInformationUnstructured=tx["remittanceInformationUnstructured"],
+                    proprietaryBankTransactionCode=tx["proprietaryBankTransactionCode"],
+                    internalTransactionId=tx["internalTransactionId"]
+                )
+                # Classify the transaction
+                transaction.category = await classify_transaction_with_llm(transaction)
+                transaction_objects.append(transaction)
 
-        Spending by Category:
-        {json.dumps(stats_response['category_spending'], indent=2)}
+                # Calculate weekly totals
+                date = datetime.strptime(transaction.bookingDate, "%Y-%m-%d")
+                week_start = date - timedelta(days=date.weekday())
+                week_key = week_start.strftime("%Y-%m-%d")
 
-        Monthly Spending Trend:
-        {json.dumps(stats_response['monthly_spending'], indent=2)}
+                amount = float(transaction.transactionAmount["amount"])
+                if amount < 0:  # Only consider spending (negative amounts)
+                    # Update overall weekly totals
+                    weekly_totals[week_key] = weekly_totals.get(week_key, 0) + abs(amount)
 
-        Top Spending Areas:
-        {json.dumps(stats_response['top_merchants'], indent=2)}
+                    # Update category weekly totals
+                    if transaction.category:
+                        if transaction.category not in category_weekly_totals:
+                            category_weekly_totals[transaction.category] = {}
+                        category_weekly_totals[transaction.category][week_key] = category_weekly_totals[transaction.category].get(week_key, 0) + abs(amount)
 
-        Please provide:
-        1. A summary of spending patterns
-        2. Areas where spending could be optimized
-        3. Specific recommendations for saving money
-        4. Comparison with average spending in these categories
-        5. Actionable steps to improve financial health
-        """
+            except Exception as e:
+                print(f"Error processing transaction: {e}")
+                continue
 
-        insights = await get_spending_insights(prompt)
-        return {"insights": insights}
+        # Calculate category spending totals
+        category_spending = {}
+        for tx in transaction_objects:
+            try:
+                amount = float(tx.transactionAmount["amount"])
+                if amount < 0 and tx.category:  # Only consider spending (negative amounts)
+                    category_spending[tx.category] = category_spending.get(tx.category, 0) + abs(amount)
+            except Exception as e:
+                print(f"Error calculating category spending: {e}")
+                continue
+
+        # Calculate weekly averages for each category
+        weekly_averages = {}
+        for category, weekly_data in category_weekly_totals.items():
+            if weekly_data:
+                weekly_averages[category] = sum(weekly_data.values()) / len(weekly_data)
+
+        print("\n=== Spending Analysis ===")
+        print("\nCategory Spending:")
+        for category, amount in category_spending.items():
+            print(f"{category}: £{amount:.2f}")
+
+        print("\nWeekly Averages:")
+        for category, avg in weekly_averages.items():
+            print(f"{category}: £{avg:.2f}")
+
+        # Get expert tips with the calculated data
+        print("\n=== Generating Expert Tips ===")
+        tips = await get_expert_tips({
+            "category_spending": category_spending,
+            "weekly_averages": weekly_averages
+        })
+
+        print("\n=== Generated Tips ===")
+        for i, tip in enumerate(tips, 1):
+            print(f"\n{i}. {tip}")
+
+        print("\n" + "="*50)
+        print("AI INSIGHTS GENERATION COMPLETE")
+        print("="*50 + "\n")
+
+        return {
+            "success": True,
+            "data": {
+                "tips": tips,
+                "category_spending": category_spending,
+                "weekly_averages": weekly_averages
+            }
+        }
     except Exception as e:
-        logger.error(f"Error getting AI insights: {str(e)}")
+        print(f"\nERROR in get_ai_insights: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @ai_router.get("/expert-tips")
@@ -598,50 +511,6 @@ async def get_ai_expert_tips(
     except Exception as e:
         logger.error(f"Error generating expert tips: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/test/expert-tips")
-async def test_expert_tips():
-    """
-    Get expert tips based on mock transaction data.
-    """
-    # Get mock transactions
-    transactions = MOCK_TRANSACTIONS["transactions"]["booked"]
-
-    # Convert to Transaction objects
-    transaction_objects = []
-    for t in transactions:
-        try:
-            transaction = Transaction(
-                transactionId=t["transactionId"],
-                bookingDate=t["bookingDate"],
-                valueDate=t["valueDate"],
-                transactionAmount=t["transactionAmount"],
-                remittanceInformationUnstructured=t["remittanceInformationUnstructured"],
-                proprietaryBankTransactionCode=t["proprietaryBankTransactionCode"],
-                internalTransactionId=t["internalTransactionId"],
-                entryReference=t.get("entryReference"),
-                additionalInformation=t.get("additionalInformation"),
-                creditorName=t.get("creditorName"),
-                creditorAccount=t.get("creditorAccount"),
-                debtorName=t.get("debtorName"),
-                debtorAccount=t.get("debtorAccount"),
-                bookingDateTime=t.get("bookingDateTime"),
-                valueDateTime=t.get("valueDateTime")
-            )
-            transaction_objects.append(transaction)
-        except Exception as e:
-            print(f"Error creating transaction: {e}")
-            continue
-
-    print(f"Created {len(transaction_objects)} transaction objects")
-
-    # Analyze transactions
-    analysis = await analyze_transactions(transaction_objects)
-
-    # Get expert tips
-    tips = await get_expert_tips(analysis.model_dump())
-
-    return {"tips": tips}
 
 @ai_router.get("/deals")
 async def get_ai_deals(
@@ -680,14 +549,57 @@ async def get_ai_deals(
                     deal["category"] = cat
                 all_deals.extend(cat_deals)
 
-            return {
+        return {
                 "deals": all_deals,
                 "top_categories": [cat for cat, _ in top_categories],
                 "last_updated": datetime.utcnow().isoformat()
-            }
+        }
     except Exception as e:
         logger.error(f"Error finding deals: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+@ai_router.post("/marketplace-for-tip")
+async def get_marketplace_for_tip(tip: dict = Body(...)):
+    tip_text = tip.get("tip", "")
+    offers_to_check = MOCK_OFFERS
+
+    prompt = (
+        "You are an assistant that helps match financial tips to marketplace offers. "
+        "For each offer, answer YES if the offer is relevant to the tip, otherwise NO. "
+        f"Tip: {tip_text}\n\n"
+        "Offers:\n"
+    )
+    for i, offer in enumerate(offers_to_check, 1):
+        prompt += f"{i}. {offer['title']} - {offer['description']}\n"
+
+    prompt += (
+        "\nRespond with a list of YES/NO, one for each offer, in order. "
+        "Example: YES, NO, YES, NO"
+    )
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=20,
+            temperature=0,
+        )
+        answer = getattr(response.choices[0].message, "content", None)
+        if answer is not None:
+            answer = answer.strip().lower()
+            yes_no = [x.strip() for x in answer.replace(".", ",").split(",")]
+            matched_offers = [
+                offer for offer, yn in zip(offers_to_check, yes_no) if yn.startswith("yes")
+            ]
+        else:
+            matched_offers = offers_to_check
+    except Exception as e:
+        matched_offers = offers_to_check
+
+    if not matched_offers:
+        matched_offers = offers_to_check
+
+    return {"offers": matched_offers}
 
 # Register routers
 app.include_router(banking_router)
