@@ -1,12 +1,12 @@
-
-import React from 'react';
-import Header from '@/components/Header';
-import Hero from '@/components/Hero';
-import Features from '@/components/Features';
-import HowItWorks from '@/components/HowItWorks';
-import Testimonials from '@/components/Testimonials';
-import CallToAction from '@/components/CallToAction';
-import Footer from '@/components/Footer';
+import React from "react";
+import Header from "@/components/Header";
+import Hero from "@/components/Hero";
+import Features from "@/components/Features";
+import HowItWorks from "@/components/HowItWorks";
+import Testimonials from "@/components/Testimonials";
+import MissedOpportunities from "@/components/MissedOpportunities";
+import CallToAction from "@/components/CallToAction";
+import Footer from "@/components/Footer";
 
 const Index = () => {
   return (
@@ -14,6 +14,7 @@ const Index = () => {
       <Header />
       <main className="pt-16">
         <Hero />
+        <MissedOpportunities />
         <Features />
         <HowItWorks />
         <Testimonials />

@@ -990,12 +990,12 @@ async function generateTotalWithOpenAI(openai, instructions, description) {
 Instructions: ${instructions}
 Description: ${description}
 
-Look for phrases like "can refer X friends", "limited to X", "up to X referrals", "refer A friend", etc. etc.
+Look for phrases like "can refer X friends" (meaning X+1 needed), "limited to X" (meaning X needed), "up to X referrals" (meaning X needed), "refer A friend" (meaning 2 needed), etc. etc.
 If no specific limit is mentioned, analyze the program and suggest a reasonable limit between 3-6.
 Only respond with a number (no text).`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "o3-2025-04-16",
       messages: [
         {
           role: "system",
@@ -1005,7 +1005,7 @@ Only respond with a number (no text).`;
         { role: "user", content: prompt },
       ],
       max_tokens: 10,
-      temperature: 0.7,
+      temperature: 0.3,
     });
 
     const totalText = response.choices[0].message.content.trim();

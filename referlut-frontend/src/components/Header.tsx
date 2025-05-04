@@ -15,7 +15,11 @@ const Header = () => {
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-2">
-          <div className="h-8 w-8 bg-referlut-purple rounded-lg"></div>
+          <img
+            src="/referlut.png"
+            alt="Referlut Logo"
+            className="h-10 w-10"
+          ></img>
           <span className="text-xl font-bold bg-gradient-to-r from-referlut-purple to-referlut-orange bg-clip-text text-transparent">
             Referlut
           </span>
@@ -29,24 +33,24 @@ const Header = () => {
           >
             Home
           </Link>
-          <Link
-            to="#features"
+          <a
+            href="#features"
             className="text-gray-700 hover:text-referlut-purple transition"
           >
             Features
-          </Link>
-          <Link
-            to="#how-it-works"
+          </a>
+          <a
+            href="#how-it-works"
             className="text-gray-700 hover:text-referlut-purple transition"
           >
             How It Works
-          </Link>
-          <Link
-            to="#testimonials"
+          </a>
+          <a
+            href="#testimonials"
             className="text-gray-700 hover:text-referlut-purple transition"
           >
             Testimonials
-          </Link>
+          </a>
         </nav>
 
         {/* Login/Signup/Profile Buttons */}
@@ -67,7 +71,12 @@ const Header = () => {
                 to="/marketplace"
                 className="text-gray-700 hover:text-referlut-purple transition"
               >
-                Marketplace
+                <Button
+                  variant="outline"
+                  className="border-referlut-orange text-referlut-orange hover:bg-referlut-orange/10"
+                >
+                  Marketplace
+                </Button>
               </Link>
               <Link to="/dashboard">
                 <Button
