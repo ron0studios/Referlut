@@ -1,44 +1,93 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "FastAPI",
-            "type": "python",
-            "request": "launch",
-            "module": "uvicorn",
-            "args": [
-                "main:app",
-                "--reload",
-                "--port",
-                "8000"
-            ],
-            "jinja": true,
-            "justMyCode": false,
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/referlut-api"
-            },
-            "envFile": "${workspaceFolder}/referlut-api/.env"
-        },
-        {
-            "name": "Worker",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/referlut-api/worker.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/referlut-api"
-            },
-            "envFile": "${workspaceFolder}/referlut-api/.env"
-        }
-    ],
-    "compounds": [
-        {
-            "name": "Worker + main app",
-            "configurations": [
-                "FastAPI",
-                "Worker"
-            ]
-        }
-    ]
-} 
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--reload", "--port", "8000"],
+      "jinja": true,
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/referlut-api/venv/bin/python"
+      },
+      "envFile": "${workspaceFolder}/referlut-api/.env",
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "name": "Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/referlut-api/worker.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/referlut-api/venv/bin/python"
+      },
+      "envFile": "${workspaceFolder}/referlut-api/.env",
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "name": "React Vite: debug server-side",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/referlut-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMapPathOverrides": {
+        "webpack:///./~/*": "${workspaceFolder}/referlut-frontend/node_modules/*",
+        "webpack://?:*/*": "${workspaceFolder}/referlut-frontend/*"
+      },
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "React Vite: debug client-side",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/referlut-frontend",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "/turbopack/[project]/*": "${webRoot}/referlut-frontend/*",
+        "webpack://nextjs-app-14/./*": "${workspaceFolder}/referlut-frontend/*",
+        "webpack://_N_E/./*": "${workspaceFolder}/referlut-frontend/*"
+      },
+      "skipFiles": [
+        "<node_internals>/**",
+        "${workspaceFolder}/referlut-frontend/node_modules/**",
+        "**/next/dist/**",
+        "**/webpack/**"
+      ],
+      "resolveSourceMapLocations": [
+        "!**/node_modules/**",
+        "!**/tensorflow/**",
+        "!**/hot-reloader-client*",
+        "!**/runtime-backend-dom*"
+      ],
+      "trace": true,
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack",
+      "configurations": [
+        "FastAPI",
+        "Worker",
+        "React Vite: debug server-side",
+        "React Vite: debug client-side"
+      ],
+      "stopAll": true
+    }
+  ]
+}

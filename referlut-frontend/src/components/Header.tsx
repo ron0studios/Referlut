@@ -33,6 +33,7 @@ const Header = () => {
           >
             Home
           </Link>
+<<<<<<< HEAD
           <a
             href="#features"
             className="text-gray-700 hover:text-referlut-purple transition"
@@ -51,6 +52,31 @@ const Header = () => {
           >
             Testimonials
           </a>
+=======
+            {/* Check if user is on landing page */}
+            {location.pathname === "/" && (
+            <>
+              <Link
+              to="#features"
+              className="text-gray-700 hover:text-referlut-purple transition"
+              >
+              Features
+              </Link>
+              <Link
+              to="#how-it-works"
+              className="text-gray-700 hover:text-referlut-purple transition"
+              >
+              How It Works
+              </Link>
+              <Link
+              to="#testimonials"
+              className="text-gray-700 hover:text-referlut-purple transition"
+              >
+              Testimonials
+              </Link>
+            </>
+            )}
+>>>>>>> refs/remotes/origin/main
         </nav>
 
         {/* Login/Signup/Profile Buttons */}

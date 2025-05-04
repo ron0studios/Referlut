@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 from typing import Literal
+from postgrest.types import CountMethod
 
 # Load environment variables
 load_dotenv()
@@ -15,8 +16,12 @@ print(f"NORDIGEN_SECRET_KEY: {'Set' if os.getenv('NORDIGEN_SECRET_KEY') else 'No
 
 NORDIGEN_SECRET_ID = os.getenv("NORDIGEN_SECRET_ID", "")
 NORDIGEN_SECRET_KEY = os.getenv("NORDIGEN_SECRET_KEY", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+# Validate required environment variables
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
 
 # Initialize Nordigen client with debug logging
 try:
@@ -41,15 +46,15 @@ except Exception as e:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Rate limit: max 4 calls per day per account per scope
 def can_fetch(account_id: str, scope: Literal['account','details','balances','transactions']) -> bool:
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     # count logs for this account and scope in last 24h
-    result = supabase.table('fetch_logs').select('*', count='exact', head=True) \
+    result = supabase.table('fetch_logs').select('*', count=CountMethod.exact, head=True) \
         .eq('account_id', account_id) \
         .eq('scope', scope) \
         .gte('fetched_at', since) \
         .execute()
+    return (result.count or 0) < 4
     return (result.count or 0) < 4
 
 def log_fetch(account_id: str, scope: Literal['account','details','balances','transactions']):
@@ -90,9 +95,9 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
             institution_id=institution_id,
             reference_id=user_id
         )
-        consent_link = requisition["link"]
+        consent_link = requisition["link"] # type: ignore
         requisition_id = requisition["id"]
-        
+
         # Store the requisition details in Supabase immediately
         try:
             result = supabase.table("requisitions").insert({
@@ -108,7 +113,7 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
             print(f"Supabase URL: {SUPABASE_URL}")
             print(f"Supabase Key length: {len(SUPABASE_KEY) if SUPABASE_KEY else 0}")
             raise
-        
+
         return {"link": consent_link, "requisition_id": requisition_id}
     except Exception as e:
         print(f"Error in initiate_requisition: {str(e)}")
@@ -117,12 +122,12 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
 def handle_requisition_callback(ref: str):
     # First try to find the requisition by reference (user_id)
     response = supabase.table("requisitions").select("*").eq("user_id", ref).order("created_at", desc=True).limit(1).execute()
-    
+
     if not response.data:
         raise Exception("No requisition found for this reference")
-    
+
     requisition_id = response.data[0]["requisition_id"]
-    
+
     # Exchange the requisition ID for access tokens and store in Supabase
     requisition = client.requisition.get_requisition_by_id(requisition_id)
     if requisition["status"] == "LN":
@@ -145,7 +150,7 @@ def fetch_accounts(requisition_id: str, user_id: str):
 
 
         # copilot shush
-        # 
+        #
         # we need to:
         # 1. For each account_id, check if the account is already in the database
         # If it is in the database, return its existing record
@@ -199,7 +204,7 @@ def fetch_accounts(requisition_id: str, user_id: str):
         rec = {
             "account_id": account_id,
             "iban": metadata["iban"],
-            "institution_id": requisition["institution_id"],
+            "institution_id": requisition["institution_id"], # type: ignore
             "status": metadata["status"],
             "owner_name": metadata["owner_name"],
             "bban": metadata["bban"],
@@ -207,7 +212,7 @@ def fetch_accounts(requisition_id: str, user_id: str):
             "currency": details.get("account", {}).get("currency"),
             "user_id": user_id
         }
-        supabase.table("accounts").upsert(rec, on_conflict=["account_id"]).execute()
+        supabase.table("accounts").upsert(rec, on_conflict="account_id").execute()
 
         # Log fetches after the account record exists
         if fetched_account:
@@ -220,7 +225,7 @@ def fetch_accounts(requisition_id: str, user_id: str):
             "account_id": account_id,
             "user_id": user_id,
             "status": "pending"
-        }, on_conflict=["account_id"]).execute()
+        }, on_conflict="account_id").execute()
         records.append(rec)
     return records
 
@@ -275,6 +280,6 @@ def fetch_transactions(account_id: str) -> int:
             "proprietary_bank_transaction_code": t.get("proprietaryBankTransactionCode"),
             "category": code_map.get(t.get("proprietaryBankTransactionCode"), "other")
         }
-        supabase.table("transactions").upsert(rec, on_conflict=["transaction_id"]).execute()
+        supabase.table("transactions").upsert(rec, on_conflict="transaction_id").execute()
         inserted += 1
     return inserted

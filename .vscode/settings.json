@@ -1,0 +1,42 @@
+{
+  // Recommended default settings.
+  // Your user settings will take priority so feel free to change them there.
+  "trailing-spaces.trimOnSave": true,
+  "git.autoRepositoryDetection": "openEditors",
+  "git.detectSubmodules": false,
+  "files.autoSave": "afterDelay",
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "editor.formatOnSave": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.defaultInterpreterPath": "${workspaceFolder}/referlut-api/venv/bin/python",
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "editor.rulers": [
+    {
+      // Shows a line at 120 characters which is from our SV coding standards.
+      // See this page for more info: https://confluence.arm.com/display/VIP/VIP+Design+and+Coding+Standards
+      "column": 120,
+      "color": "#ff5d5d60"
+    }
+  ],
+  "files.eol": "\n",
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  // Remove files from searches
+  "search.exclude": {
+    "**/.git/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/venv/**": true
+  },
+  // Try to limit the amount of files VSCode needs to watch for performance
+  "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/venv/**": true
+  }
+}

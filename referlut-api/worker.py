@@ -11,6 +11,10 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# Ensure environment variables are set
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("worker")
@@ -34,7 +38,11 @@ if __name__ == "__main__":
                 logger.info(f"Processing account {acct_id} for user {user_id}")
                 # fetch and persist last 90 days via background fetch_transactions
                 try:
-                    fetch_transactions(acct_id)
+                    if acct_id is not None:
+                        fetch_transactions(str(acct_id))
+                    else:
+                        logger.error(f"Skipping account with None account_id for user {user_id}")
+                        continue
                     # mark processed
                     supabase.table("account_queue").update({
                         "status": "processed",
