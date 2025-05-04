@@ -29,24 +29,29 @@ const Header = () => {
           >
             Home
           </Link>
-          <Link
-            to="#features"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            Features
-          </Link>
-          <Link
-            to="#how-it-works"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            How It Works
-          </Link>
-          <Link
-            to="#testimonials"
-            className="text-gray-700 hover:text-referlut-purple transition"
-          >
-            Testimonials
-          </Link>
+            {/* Check if user is on landing page */}
+            {location.pathname === "/" && (
+            <>
+              <Link
+              to="#features"
+              className="text-gray-700 hover:text-referlut-purple transition"
+              >
+              Features
+              </Link>
+              <Link
+              to="#how-it-works"
+              className="text-gray-700 hover:text-referlut-purple transition"
+              >
+              How It Works
+              </Link>
+              <Link
+              to="#testimonials"
+              className="text-gray-700 hover:text-referlut-purple transition"
+              >
+              Testimonials
+              </Link>
+            </>
+            )}
         </nav>
 
         {/* Login/Signup/Profile Buttons */}
@@ -62,6 +67,12 @@ const Header = () => {
                 >
                   {user?.name || "Profile"}
                 </Button>
+              </Link>
+              <Link
+                to="/marketplace"
+                className="text-gray-700 hover:text-referlut-purple transition"
+              >
+                Marketplace
               </Link>
               <Link to="/dashboard">
                 <Button

@@ -1,8 +1,10 @@
 import os
 from nordigen import NordigenClient
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
+from typing import Literal
+from postgrest.types import CountMethod
 
 # Load environment variables
 load_dotenv()
@@ -14,8 +16,12 @@ print(f"NORDIGEN_SECRET_KEY: {'Set' if os.getenv('NORDIGEN_SECRET_KEY') else 'No
 
 NORDIGEN_SECRET_ID = os.getenv("NORDIGEN_SECRET_ID", "")
 NORDIGEN_SECRET_KEY = os.getenv("NORDIGEN_SECRET_KEY", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+# Validate required environment variables
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
 
 # Initialize Nordigen client with debug logging
 try:
@@ -32,8 +38,6 @@ try:
 
     # Use existing token
     client.token = "YOUR_TOKEN"
-
-    # Exchange refresh token for new access token
     new_token = client.exchange_token(token_data["refresh"])
 
     print("Nordigen client initialized successfully")
@@ -41,6 +45,24 @@ except Exception as e:
     print(f"Error initializing Nordigen client: {str(e)}")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def can_fetch(account_id: str, scope: Literal['account','details','balances','transactions']) -> bool:
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    # count logs for this account and scope in last 24h
+    result = supabase.table('fetch_logs').select('*', count=CountMethod.exact, head=True) \
+        .eq('account_id', account_id) \
+        .eq('scope', scope) \
+        .gte('fetched_at', since) \
+        .execute()
+    return (result.count or 0) < 4
+    return (result.count or 0) < 4
+
+def log_fetch(account_id: str, scope: Literal['account','details','balances','transactions']):
+    supabase.table('fetch_logs').insert({
+        'account_id': account_id,
+        'scope': scope,
+        'fetched_at': datetime.now(timezone.utc).isoformat()
+    }).execute()
 
 def verify_supabase_table():
     try:
@@ -73,9 +95,9 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
             institution_id=institution_id,
             reference_id=user_id
         )
-        consent_link = requisition["link"]
+        consent_link = requisition["link"] # type: ignore
         requisition_id = requisition["id"]
-        
+
         # Store the requisition details in Supabase immediately
         try:
             result = supabase.table("requisitions").insert({
@@ -91,7 +113,7 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
             print(f"Supabase URL: {SUPABASE_URL}")
             print(f"Supabase Key length: {len(SUPABASE_KEY) if SUPABASE_KEY else 0}")
             raise
-        
+
         return {"link": consent_link, "requisition_id": requisition_id}
     except Exception as e:
         print(f"Error in initiate_requisition: {str(e)}")
@@ -100,12 +122,12 @@ def initiate_requisition(user_id: str, institution_id: str, redirect_url: str):
 def handle_requisition_callback(ref: str):
     # First try to find the requisition by reference (user_id)
     response = supabase.table("requisitions").select("*").eq("user_id", ref).order("created_at", desc=True).limit(1).execute()
-    
+
     if not response.data:
         raise Exception("No requisition found for this reference")
-    
+
     requisition_id = response.data[0]["requisition_id"]
-    
+
     # Exchange the requisition ID for access tokens and store in Supabase
     requisition = client.requisition.get_requisition_by_id(requisition_id)
     if requisition["status"] == "LN":
@@ -116,131 +138,148 @@ def handle_requisition_callback(ref: str):
         return {"status": "success", "requisition": requisition}
     return {"status": "error", "message": "Requisition not linked"}
 
-def fetch_accounts(user_id: str):
+def fetch_accounts(requisition_id: str, user_id: str):
     """
-    Returns all user accounts from Supabase and appends any newly linked accounts from the API.
+    Fetch all accounts for a given requisition, upsert metadata into Supabase,
+    enqueue each account for transaction import, and return the account records.
     """
-    # First, get all existing accounts from Supabase
-    existing_accounts_response = supabase.table("accounts").select("*").eq("user_id", user_id).execute()
-    accounts = existing_accounts_response.data
-    
-    # Keep track of existing account IDs to avoid duplicates
-    existing_account_ids = {account["account_id"] for account in accounts}
-    
-    # Now check for any new accounts via the API
-    # Retrieve all requisitions for user
-    response = supabase.table("requisitions").select("*").eq("user_id", user_id).execute()
-    
-    for req in response.data:
-        requisition = client.requisition.get_requisition_by_id(req["requisition_id"])
-        for account_id in requisition.get("accounts", []):
-            # Skip if we already have this account
-            if account_id in existing_account_ids:
-                continue
-                
-            # Get account details from API
+    requisition = client.requisition.get_requisition_by_id(requisition_id)
+    account_ids = requisition.get("accounts", [])
+    records = []
+    for account_id in account_ids:
+
+
+        # copilot shush
+        #
+        # we need to:
+        # 1. For each account_id, check if the account is already in the database
+        # If it is in the database, return its existing record
+        # If it is not in the database:
+        # 2. Check if we can fetch it, if we can, then we will fetch the metadata and details.
+        # 3. Once metadata and details are fetched, populate the accounts table.
+        # 4. Then: log fetches,
+        # 5. Append the account to the queue for transactions to be processed
+
+        # Safely check existing account without erroring if no rows
+        existing = supabase.table('accounts').select('*').eq('account_id', account_id).limit(1).execute()
+        if existing.data:
+            records.append(existing.data[0])
+            continue
+        # Account not found locally; initialize empty info
+        fetched_account = False
+        fetched_details = False
+        # Account does not exist, fetch from Nordigen or Supabase
+        acct = {}
+        metadata = {}
+        details = {}
+
+        if can_fetch(account_id, 'account'):
             acct = client.account_api(id=account_id)
-            acct_details = acct.get_details()
-            acct_metadata = acct.get_metadata()
-            
-            # Use the same record structure as the original code
-            record = {
-                "account_id": account_id,
-                "iban": acct_metadata.get("iban", ""),
+            metadata = acct.get_metadata()
+            fetched_account = True
+        else:
+            # If we cannot fetch, then we will have to log an error that we cannot fetch the account and continue
+            print(f"Cannot fetch account {account_id} due to rate limit")
+            continue
+
+        if can_fetch(account_id, 'details'):
+            details = acct.get_details()
+            fetched_details = True
+        else:
+            print(f"Cannot fetch account details for {account_id} due to rate limit")
+            continue
+
+
+        # pull metadata because these fields need irt
+        ''''
+                        "iban": acct_metadata.get("iban", ""),
                 "institution_id": req["institution_id"],
                 "status": acct_metadata.get("status", ""),
                 "owner_name": acct_metadata.get("owner_name", ""),
                 "bban": acct_metadata.get("bban", ""),
                 "name": acct_metadata.get("name", ""),
-                "currency": acct_details.get("currency", ""),
-                "user_id": user_id
-            }
-            
-            # Upsert into Supabase accounts table
-            supabase.table("accounts").upsert(record, on_conflict=["account_id"]).execute()
-            accounts.append(record)
-            
-    return accounts
+                "currency": acct_details.get("currency", ""),'''
+
+        # Upsert account metadata before logging fetches to satisfy FK constraints
+        rec = {
+            "account_id": account_id,
+            "iban": metadata["iban"],
+            "institution_id": requisition["institution_id"], # type: ignore
+            "status": metadata["status"],
+            "owner_name": metadata["owner_name"],
+            "bban": metadata["bban"],
+            "name": metadata["name"],
+            "currency": details.get("account", {}).get("currency"),
+            "user_id": user_id
+        }
+        supabase.table("accounts").upsert(rec, on_conflict="account_id").execute()
+
+        # Log fetches after the account record exists
+        if fetched_account:
+            log_fetch(account_id, 'account')
+        if fetched_details:
+            log_fetch(account_id, 'details')
+
+        # Enqueue for transaction fetching
+        supabase.table("account_queue").upsert({
+            "account_id": account_id,
+            "user_id": user_id,
+            "status": "pending"
+        }, on_conflict="account_id").execute()
+        records.append(rec)
+    return records
 
 def fetch_balances(account_id: str):
     """
     Fetch balances for the given account via GET /accounts/{id}/balances/ and return list of balances.
     """
+    # GET balances if under daily limit
+    if not can_fetch(account_id, 'balances'):
+        return []
     acct = client.account_api(id=account_id)
-    balances_resp = acct.get_balances()
-    # extract balances array
-    return balances_resp.get("balances", [])
+    resp = acct.get_balances()
+    log_fetch(account_id, 'balances')
+    return resp.get('balances', [])
 
-def fetch_transactions(account_id: str, months: int = 12):
+def fetch_transactions(account_id: str) -> int:
     """
-    Fetch transactions via GET /accounts/{id}/transactions, flatten booked and pending,
-    filter by date within 'months', categorize by merchant codes, and return list.
+    Fetch and upsert transactions for the past 90 days into Supabase. Returns count inserted.
     """
-    # Calculate date range
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=30 * months)
-    
-    # Format dates as YYYY-MM-DD for API call
-    end_date_formatted = end_date.strftime("%Y-%m-%d")
-    start_date_formatted = start_date.strftime("%Y-%m-%d")
-
-    # First, get existing transactions from Supabase
-    existing_tx_response = supabase.table("transactions").select("transaction_id").execute()
-    existing_tx_ids = {tx["transaction_id"] for tx in existing_tx_response.data if tx["transaction_id"]}
-    
+    start_date = end_date - timedelta(days=90)
+    # Format date strings for last 90 days
+    date_from = start_date.strftime("%Y-%m-%d")
+    date_to = end_date.strftime("%Y-%m-%d")
+    # skip if over daily limit
+    if not can_fetch(account_id, 'transactions'):
+        return 0
     acct = client.account_api(id=account_id)
-    tx_resp = acct.get_transactions(date_from=start_date_formatted, date_to=end_date_formatted)
-    raw_txs = []
-    raw_txs.extend(tx_resp.get("transactions", {}).get("booked", []))
-    raw_txs.extend(tx_resp.get("transactions", {}).get("pending", []))
-    # mapping proprietary codes to categories
-    code_map = {
-        "FPO": "debit",
-        "BGC": "credit",
-        "FPI": "credit",
-        "CSH": "cash",
-        "TFR": "transfer"
-    }
-    txs = []
-    for t in raw_txs:
-        # filter by date
+    tx_resp = acct.get_transactions(date_from=date_from, date_to=date_to)
+    log_fetch(account_id, 'transactions')
+    raw = []
+    raw.extend(tx_resp.get("transactions", {}).get("booked", []))
+    raw.extend(tx_resp.get("transactions", {}).get("pending", []))
+    code_map = {"FPO": "debit", "BGC": "credit", "FPI": "credit", "CSH": "cash", "TFR": "transfer"}
+    inserted = 0
+    for t in raw:
         date_str = t.get("bookingDate") or t.get("valueDate")
-        if date_str:
-            dt = datetime.fromisoformat(date_str)
-            if dt < start_date:
-                continue
-                
-        # Skip if transaction already exists in database
-        if t.get("transactionId") in existing_tx_ids:
+        if date_str and datetime.fromisoformat(date_str) < start_date:
             continue
-            
-        # determine category
-        pcode = t.get("proprietaryBankTransactionCode")
-        category = code_map.get(pcode, "other")
-        # extract amount and currency
         amt = t.get("transactionAmount", {})
-        amt_val = float(amt.get("amount", 0))
-        curr = amt.get("currency")
-        # Helper function to safely truncate string values
-        def safe_str(value, max_length=10):
-            if value and isinstance(value, str):
-                return value[:max_length]
-            return value
-            
-        record = {
+        rec = {
             "transaction_id": t.get("transactionId"),
-            "entry_reference": safe_str(t.get("entryReference")),
-            "internal_transaction_id": safe_str(t.get("internalTransactionId")),
-            "additional_information": safe_str(t.get("additionalInformation")),
-            "merchant_name": safe_str(t.get("remittanceInformationUnstructured"), 255),  # Likely needs more space
-            "amount": amt_val,
-            "currency": safe_str(curr),
+            "account_id": account_id,
+            "entry_reference": t.get("entryReference"),
+            "internal_transaction_id": t.get("internalTransactionId"),
+            "additional_information": t.get("additionalInformation"),
+            "merchant_name": t.get("remittanceInformationUnstructured"),
+            "amount": float(amt.get("amount", 0)),
+            "currency": amt.get("currency"),
             "booking_date": t.get("bookingDate"),
             "value_date": t.get("valueDate"),
-            "proprietary_bank_transaction_code": safe_str(pcode),
-            "category": safe_str(category)
+            "proprietary_bank_transaction_code": t.get("proprietaryBankTransactionCode"),
+            "category": code_map.get(t.get("proprietaryBankTransactionCode"), "other")
         }
-        # Only insert new transactions
-        supabase.table("transactions").insert(record).execute()
-        txs.append(record)
-    return txs
+        supabase.table("transactions").upsert(rec, on_conflict="transaction_id").execute()
+        inserted += 1
+    return inserted

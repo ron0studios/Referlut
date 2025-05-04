@@ -1,0 +1,44 @@
+{
+    "recommendations": [
+      // ESLint/Prettier formatter
+      "esbenp.prettier-vscode",
+      // ESLint support to VSCode
+      "dbaeumer.vscode-eslint",
+      // NPM intellisense (for importing pkgs)
+      "christian-kohler.npm-intellisense",
+      // GitLens (track commit history, see blame etc)
+      "eamodio.gitlens",
+      // Useful quality of life coding extensions
+      "vincaslt.highlight-matching-tag",
+      "formulahendry.auto-close-tag",
+      "formulahendry.auto-rename-tag",
+      "oderwat.indent-rainbow",
+      // nuke trailing spaces (useful for gerrit)
+      "shardulm94.trailing-spaces",
+      "kevinkyang.auto-comment-blocks",
+      // cmd + ' or win + ' to cycle quotes in strings
+      "britesnow.vscode-toggle-quotes",
+      // autocomplete for ${}
+      "meganrogge.template-string-converter",
+
+      // React support
+      "zhang-renyang.vscode-react",
+
+      // Tailwind extensions
+      "bradlc.vscode-tailwindcss",
+      "heybourn.headwind",
+
+      // Debug extensions
+      "firefox-devtools.vscode-firefox-debug",
+      "GitHub.copilot",
+      "github.copilot-chat",
+
+      // Python extensions
+      "ms-python.isort",
+      "ms-python.vscode-pylance",
+      "ms-python.debugpy",
+
+      // When we eventually move to TypeScript
+      //"yoavbls.pretty-ts-errors"
+    ]
+}

@@ -3,29 +3,22 @@ import logging
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import datetime
 from supabase import create_client, Client
 import openai
+from typing import Optional
 from banking import (
     initiate_requisition,
     handle_requisition_callback,
     fetch_accounts,
     fetch_transactions,
 )
-from ai import (
-    get_spending_insights, 
-    scrape_best_deals, 
-    get_expert_tips,
-    Transaction,
-    analyze_transactions,
-    classify_transaction_with_llm
-)
+from ai import get_spending_insights, scrape_best_deals
 from pydantic import BaseModel
 import asyncio
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import json
-from mock_data import MOCK_TRANSACTIONS
-from functools import lru_cache
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +30,9 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
@@ -51,12 +47,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cache for transaction classifications
-transaction_classifications = {}
-
 class InsightsRequest(BaseModel):
     prompt: str
-    deal_query: str = None
+    deal_query: Optional[str] = None
 
 @app.get("/")
 async def root():
@@ -75,24 +68,41 @@ async def initiate_bank_link(user_id: str, institution_id: str, redirect_url: st
 @app.get("/bank/link/callback")
 async def handle_bank_link_callback(ref: str):
     try:
-        handle_requisition_callback(ref)
-        return {"status": "success", "message": "Bank account linked successfully"}
+        # finalize requisition and enqueue metadata and transactions
+        result = handle_requisition_callback(ref)
+        if result.get("status") != "success":
+            raise HTTPException(status_code=400, detail=result.get("message"))
+        requisition = result["requisition"]
+        if not requisition:
+            raise HTTPException(status_code=400, detail="Requisition not found")
+        req_id = requisition.get("id") # type: ignore
+        user_id = ref
+        # fetch and enqueue all accounts (metadata + transaction jobs)
+        accounts = fetch_accounts(req_id, user_id)
+        return {"status": "success", "accounts": accounts}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/accounts")
 async def get_accounts(user_id: str):
     try:
-        accounts = fetch_accounts(user_id)
+        # fetch all linked requisitions for user
+        resp = supabase.table("requisitions").select("requisition_id").eq("user_id", user_id).eq("status", "LN").execute()
+        accounts = []
+        for r in resp.data:
+            accounts.extend(fetch_accounts(r["requisition_id"], user_id))
         return accounts
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/transactions")
 async def get_transactions(account_id: str, months: int = 12):
+    # return persisted transactions from Supabase
     try:
-        transactions = fetch_transactions(account_id, months)
-        return transactions
+        response = supabase.table("transactions").select("*").eq("account_id", account_id).execute()
+        return response.data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -165,7 +175,7 @@ async def get_statistics(user_id: str, months: int = 12):
             "savings_opportunities": savings_opportunities,
             "last_updated": datetime.utcnow().isoformat()
         }
-        
+
         # Upsert statistics
         supabase.table("user_statistics").upsert(stats_data).execute()
 
@@ -185,23 +195,23 @@ async def get_ai_insights(user_id: str):
     try:
         # Get user's statistics
         stats = get_statistics(user_id)
-        
+
         # Construct a detailed prompt for AI analysis
         prompt = f"""
         Analyze the following spending data and provide personalized insights and recommendations:
-        
+
         Total Spending: £{stats['total_spending']:.2f}
         Total Income: £{stats['total_income']:.2f}
-        
+
         Spending by Category:
         {json.dumps(stats['category_spending'], indent=2)}
-        
+
         Monthly Spending Trend:
         {json.dumps(stats['monthly_spending'], indent=2)}
-        
+
         Top Spending Areas:
         {json.dumps(stats['top_merchants'], indent=2)}
-        
+
         Please provide:
         1. A summary of spending patterns
         2. Areas where spending could be optimized
@@ -209,7 +219,7 @@ async def get_ai_insights(user_id: str):
         4. Comparison with average spending in these categories
         5. Actionable steps to improve financial health
         """
-        
+
         insights = get_spending_insights(prompt)
         return {"insights": insights}
     except Exception as e:
